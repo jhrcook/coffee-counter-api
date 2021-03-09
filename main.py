@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 from datetime import date
-from secrets import PROJECT_KEY
 from typing import Any, Dict, List, Optional
 
 from deta import Deta
 from fastapi import FastAPI
 from passlib.context import CryptContext
+
+from keys import PROJECT_KEY
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
 pwd_context = CryptContext(schemes=["bcrypt"])
