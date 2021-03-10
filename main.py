@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
 from datetime import date, datetime
+from math import ceil
 from typing import Any, Dict, List, Optional
 
 from deta import Deta
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -50,6 +51,14 @@ def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
 
 def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
     return jsonable_encoder(bag)
+
+
+def convert_info_to_use(info: Dict[str, Any]) -> CoffeeUse:
+    return CoffeeUse(**info)
+
+
+def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
+    return jsonable_encoder(use)
 
 
 def coffee_bag_list() -> List[CoffeeBag]:
@@ -114,17 +123,27 @@ def get_active_bags(n_last: Optional[int] = None):
     return bags
 
 
-# @app.get("/uses/")
-# def get_uses(n_last: Optional[int] = None, bag_ids: Optional[List[str]] = None):
-#     coffee_uses: List[CoffeeUse] = list(coffee_use_db.values())
+@app.get("/uses/")
+def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
+    buffer_size = 300
+    pages = ceil(n_last / buffer_size)
+    uses: List[CoffeeUse] = []
 
-#     if not bag_ids is None:
-#         coffee_uses = [u for u in coffee_uses if u.bag_id in bag_ids]
+    if bag_id is None:
+        query = None
+    else:
+        query = {"bag_id": bag_id}
 
-#     coffee_uses.sort(key=lambda x: x.datetime)
-#     if not n_last is None:
-#         return coffee_uses[-n_last:]
-#     return coffee_uses
+    for page in coffee_use_db.fetch(query=query, buffer=300, pages=pages):
+        for use_info in page:
+            uses.append(convert_info_to_use(use_info))
+
+    uses.sort(key=lambda x: x.datetime)
+
+    if len(uses) < n_last:
+        return uses
+    else:
+        return uses[-n_last:]
 
 
 #### ---- Setters ---- ####
@@ -204,18 +223,18 @@ def delete_all_bags(password: str = "STAND_IN"):
             coffee_bag_db.delete(bag_info["key"])
 
 
-# @app.put("/new_use/")
-# def add_new_use(
-#     bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
-# ):
-#     if not verify_password(password):
-#         # return status.HTTP_401_UNAUTHORIZED
-#         print("password verification not yet implemented")
+@app.put("/new_use/{bag_id}")
+def add_new_use(
+    bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
+):
+    if not verify_password(password):
+        # return status.HTTP_401_UNAUTHORIZED
+        print("password verification not yet implemented")
 
-#     if not bag_id in coffee_bag_db.keys():
-#         return status.HTTP_400_BAD_REQUEST
+    bag_info = coffee_bag_db.get(bag_id)
+    if bag_info is None:
+        return status.HTTP_400_BAD_REQUEST
 
-#     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
-#     use_id = "use" + str(len(coffee_use_db) + 1)
-#     coffee_use_db[use_id] = new_coffee_use
-#     return new_coffee_use
+    new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
+    coffee_use_db.put(convert_use_to_info(new_coffee_use))
+    return new_coffee_use
