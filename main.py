@@ -170,6 +170,20 @@ def add_new_bag(bag: CoffeeBag, password: str):
     return {bag_key: bag}
 
 
+@app.put("/new_use/{bag_id}")
+def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
+
+    bag_info = coffee_bag_db.get(bag_id)
+    if bag_info is None:
+        return status.HTTP_400_BAD_REQUEST
+
+    new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
+    coffee_use_db.put(convert_use_to_info(new_coffee_use))
+    return new_coffee_use
+
+
 @app.patch("/finish_bag/{bag_id}")
 def finished_bag(bag_id: str, password: str, when: date = date.today()):
     if not verify_password(password):
@@ -216,17 +230,3 @@ def delete_all_bags(password: str):
     for page in coffee_bag_db.fetch(query=None, buffer=20, pages=20):
         for bag_info in page:
             coffee_bag_db.delete(bag_info["key"])
-
-
-@app.put("/new_use/{bag_id}")
-def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
-
-    bag_info = coffee_bag_db.get(bag_id)
-    if bag_info is None:
-        return status.HTTP_400_BAD_REQUEST
-
-    new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
-    coffee_use_db.put(convert_use_to_info(new_coffee_use))
-    return new_coffee_use
