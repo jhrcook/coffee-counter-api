@@ -158,10 +158,9 @@ def find_bag_id(bag: CoffeeBag) -> Optional[str]:
 
 
 @app.put("/new_bag/")
-def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
+def add_new_bag(bag: CoffeeBag, password: str):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("password verification not yet implemented")
+        return status.HTTP_401_UNAUTHORIZED
 
     coffee_bag_db.put(jsonable_encoder(bag))
     bag_key = find_bag_id(bag)
@@ -172,10 +171,9 @@ def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
 
 
 @app.patch("/finish_bag/{bag_id}")
-def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
+def finished_bag(bag_id: str, password: str, when: date = date.today()):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("passwords not required, yet")
+        return status.HTTP_401_UNAUTHORIZED
 
     bag_info = coffee_bag_db.get(key=bag_id)
     if bag_info is None:
@@ -192,10 +190,9 @@ def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_
 
 
 @app.patch("/update_bag/{bag_id}")
-def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
+def update_bag(bag_id: str, bag: CoffeeBag, password: str):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("password verification not yet implemented")
+        return status.HTTP_401_UNAUTHORIZED
 
     bag_info = convert_bag_to_info(bag)
     coffee_bag_db.update(bag_info, key=bag_id)
@@ -203,20 +200,18 @@ def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
 
 
 @app.delete("/delete_multiple_bags/")
-def delete_bag(bag_ids: List[str], password: str = "STAND_IN"):
+def delete_bag(bag_ids: List[str], password: str):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("password verification not yet implemented")
+        return status.HTTP_401_UNAUTHORIZED
 
     for id in bag_ids:
         coffee_bag_db.delete(id)
 
 
 @app.delete("/delete_all_bags/")
-def delete_all_bags(password: str = "STAND_IN"):
+def delete_all_bags(password: str):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("password verification not yet implemented")
+        return status.HTTP_401_UNAUTHORIZED
 
     for page in coffee_bag_db.fetch(query=None, buffer=20, pages=20):
         for bag_info in page:
@@ -224,12 +219,9 @@ def delete_all_bags(password: str = "STAND_IN"):
 
 
 @app.put("/new_use/{bag_id}")
-def add_new_use(
-    bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
-):
+def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
     if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("password verification not yet implemented")
+        return status.HTTP_401_UNAUTHORIZED
 
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
