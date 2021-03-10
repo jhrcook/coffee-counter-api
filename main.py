@@ -37,16 +37,27 @@ class CoffeeUse(BaseModel):
     datetime: datetime
 
 
+#### ---- Database interface helpers ---- ####
+
+
 def get_all_coffee_info() -> List[Dict[str, Any]]:
     return list(coffee_bag_db.fetch())[0]
 
 
+def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
+    return CoffeeBag(**info)
+
+
+def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
+    return jsonable_encoder(bag)
+
+
 def coffee_bag_list() -> List[CoffeeBag]:
-    return [CoffeeBag(**info) for info in get_all_coffee_info()]
+    return [convert_info_to_bag(info) for info in get_all_coffee_info()]
 
 
 def coffee_bag_dict() -> Dict[str, CoffeeBag]:
-    return {info["key"]: CoffeeBag(**info) for info in get_all_coffee_info()}
+    return {info["key"]: convert_info_to_bag(info) for info in get_all_coffee_info()}
 
 
 #### ---- Security ---- ####
@@ -74,10 +85,10 @@ def get_bags():
 
 @app.get("/bag/{bag_id}")
 def get_bag_info(bag_id: str):
-    bag = coffee_bag_db.get(bag_id)
-    if bag is None:
+    bag_info = coffee_bag_db.get(bag_id)
+    if bag_info is None:
         return status.HTTP_400_BAD_REQUEST
-    return CoffeeBag(**bag)
+    return convert_info_to_bag(bag_info)
 
 
 def sort_coffee_bags(bags: List[CoffeeBag]):
@@ -141,7 +152,38 @@ def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
     return {bag_key: bag}
 
 
-@app.delete("/delete_bag/")
+@app.patch("/finish_bag/")
+def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
+    if not verify_password(password):
+        # return status.HTTP_401_UNAUTHORIZED
+        print("passwords not required, yet")
+
+    bag_info = coffee_bag_db.get(key=bag_id)
+    if bag_info is None:
+        return status.HTTP_400_BAD_REQUEST
+
+    if bag_info["finish"] is None:
+        bag_info["finish"] = when
+        coffee_bag_db.update(
+            updates={"finish": jsonable_encoder(when)}, key=bag_info["key"]
+        )
+        return convert_info_to_bag(bag_info)
+    else:
+        return status.HTTP_400_BAD_REQUEST
+
+
+@app.patch("/update_bag/")
+def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
+    if not verify_password(password):
+        # return status.HTTP_401_UNAUTHORIZED
+        print("password verification not yet implemented")
+
+    bag_info = convert_bag_to_info(bag)
+    coffee_bag_db.update(bag_info, key=bag_id)
+    return bag
+
+
+@app.delete("/delete_bags/")
 def delete_bag(bag_ids: List[str], password: str = "STAND_IN"):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
@@ -157,40 +199,10 @@ def delete_all_bags(password: str = "STAND_IN"):
         # return status.HTTP_401_UNAUTHORIZED
         print("password verification not yet implemented")
 
-    for bag in coffee_bag_db.fetch():
-        coffee_bag_db.delete(bag["key"])
+    for page in coffee_bag_db.fetch(query=None, buffer=20, pages=20):
+        for bag_info in page:
+            coffee_bag_db.delete(bag_info["key"])
 
-
-# @app.put("/finish_bag/")
-# def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
-#     if not verify_password(password):
-#         # return status.HTTP_401_UNAUTHORIZED
-#         print("passwords not required, yet")
-
-#     try:
-#         bag = coffee_bag_db[bag_id]
-#     except:
-#         return status.HTTP_400_BAD_REQUEST
-
-#     if bag.finish is None:
-#         bag.finish = when
-#         coffee_bag_db[bag_id] = bag
-#         return bag
-#     else:
-#         return status.HTTP_400_BAD_REQUEST
-
-
-# @app.patch("/update_bag/")
-# def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
-#     if not verify_password(password):
-#         # return status.HTTP_401_UNAUTHORIZED
-#         print("password verification not yet implemented")
-
-#     if bag_id in coffee_bag_db.keys():
-#         coffee_bag_db[bag_id] = bag
-#         return bag
-#     else:
-#         return status.HTTP_400_BAD_REQUEST
 
 # @app.put("/new_use/")
 # def add_new_use(
