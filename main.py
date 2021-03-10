@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -120,6 +119,14 @@ def get_active_bags(n_last: Optional[int] = None):
 #### ---- Setters ---- ####
 
 
+def find_bag_id(bag: CoffeeBag) -> Optional[str]:
+    queries = [{key: value} for key, value in jsonable_encoder(bag).items()]
+    bag_info = next(coffee_bag_db.fetch(queries, pages=1, buffer=1))[0]
+    if bag_info is None:
+        return None
+    return bag_info["key"]
+
+
 @app.put("/new_bag/")
 def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
     if not verify_password(password):
@@ -127,7 +134,11 @@ def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
         print("password verification not yet implemented")
 
     coffee_bag_db.put(jsonable_encoder(bag))
-    return bag
+    bag_key = find_bag_id(bag)
+    if bag_key is None:
+        # This really should never happen since the bag was just created.
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
+    return {bag_key: bag}
 
 
 @app.delete("/delete_bag/")
@@ -148,23 +159,6 @@ def delete_all_bags(password: str = "STAND_IN"):
 
     for bag in coffee_bag_db.fetch():
         coffee_bag_db.delete(bag["key"])
-
-
-# @app.put("/new_use/")
-# def add_new_use(
-#     bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
-# ):
-#     if not verify_password(password):
-#         # return status.HTTP_401_UNAUTHORIZED
-#         print("password verification not yet implemented")
-
-#     if not bag_id in coffee_bag_db.keys():
-#         return status.HTTP_400_BAD_REQUEST
-
-#     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
-#     use_id = "use" + str(len(coffee_use_db) + 1)
-#     coffee_use_db[use_id] = new_coffee_use
-#     return new_coffee_use
 
 
 # @app.put("/finish_bag/")
@@ -197,3 +191,19 @@ def delete_all_bags(password: str = "STAND_IN"):
 #         return bag
 #     else:
 #         return status.HTTP_400_BAD_REQUEST
+
+# @app.put("/new_use/")
+# def add_new_use(
+#     bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
+# ):
+#     if not verify_password(password):
+#         # return status.HTTP_401_UNAUTHORIZED
+#         print("password verification not yet implemented")
+
+#     if not bag_id in coffee_bag_db.keys():
+#         return status.HTTP_400_BAD_REQUEST
+
+#     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
+#     use_id = "use" + str(len(coffee_use_db) + 1)
+#     coffee_use_db[use_id] = new_coffee_use
+#     return new_coffee_use
