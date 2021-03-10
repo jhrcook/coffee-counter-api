@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 
+import json
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from deta import Deta
 from fastapi import FastAPI, status
+from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
-# from keys import PROJECT_KEY
+from keys import PROJECT_KEY
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
 pwd_context = CryptContext(schemes=["bcrypt"])
 
-# deta = Deta()  # no key needed with using Deta Micro
-# coffee_bag_db = deta.Base("coffee_bag_db")
-# coffee_use_db = deta.Base("coffee_use_db")
-
 app = FastAPI()
 
-#### ---- Mock databases ---- ####
+
+#### ---- Datebases ---- ####
+
+deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
+coffee_bag_db = deta.Base("coffee_bag_db")
+coffee_use_db = deta.Base("coffee_use_db")
 
 
 class CoffeeBag(BaseModel):
@@ -35,34 +38,19 @@ class CoffeeUse(BaseModel):
     datetime: datetime
 
 
-coffee_bag_db = {
-    "bag1": CoffeeBag(
-        brand="BRCC",
-        name="Flying Elk",
-        weight=340.0,
-        start=date(year=2021, month=2, day=19),
-    ),
-    "bag2": CoffeeBag(
-        brand="BRCC",
-        name="Beyond Black",
-        weight=340.0,
-        start=date(year=2021, month=2, day=1),
-        finish=date(year=2021, month=3, day=7),
-    ),
-}
+def get_all_coffee_info() -> List[Dict[str, Any]]:
+    return list(coffee_bag_db.fetch())[0]
 
-coffee_use_db = {
-    "use1": CoffeeUse(bag_id="bag1", datetime=datetime(2021, 2, 21)),
-    "use2": CoffeeUse(bag_id="bag1", datetime=datetime(2021, 2, 22)),
-    "use3": CoffeeUse(bag_id="bag1", datetime=datetime(2021, 2, 22)),
-    "use4": CoffeeUse(bag_id="bag1", datetime=datetime(2021, 2, 25)),
-    "use5": CoffeeUse(bag_id="bag1", datetime=datetime(2021, 3, 5)),
-    "use6": CoffeeUse(bag_id="bag2", datetime=datetime(2021, 2, 5)),
-    "use7": CoffeeUse(bag_id="bag2", datetime=datetime(2021, 2, 10)),
-    "use8": CoffeeUse(bag_id="bag2", datetime=datetime(2021, 2, 15)),
-    "use9": CoffeeUse(bag_id="bag2", datetime=datetime(2021, 3, 3)),
-    "use10": CoffeeUse(bag_id="bag2", datetime=datetime(2021, 3, 5)),
-}
+
+def coffee_bag_list() -> List[CoffeeBag]:
+    return [CoffeeBag(**info) for info in get_all_coffee_info()]
+
+
+def coffee_bag_dict() -> Dict[str, CoffeeBag]:
+    return {info["key"]: CoffeeBag(**info) for info in get_all_coffee_info()}
+
+
+#### ---- Security ---- ####
 
 
 def verify_password(password: str) -> bool:
@@ -82,16 +70,15 @@ async def root():
 
 @app.get("/bags")
 def get_bags():
-    return coffee_bag_db
+    return coffee_bag_dict()
 
 
 @app.get("/bag/{bag_id}")
 def get_bag_info(bag_id: str):
-    try:
-        bag = coffee_bag_db[bag_id]
-    except:
+    bag = coffee_bag_db.get(bag_id)
+    if bag is None:
         return status.HTTP_400_BAD_REQUEST
-    return bag
+    return CoffeeBag(**bag)
 
 
 def sort_coffee_bags(bags: List[CoffeeBag]):
@@ -107,7 +94,7 @@ def sort_coffee_bags(bags: List[CoffeeBag]):
 
 @app.get("/active_bags/")
 def get_active_bags(n_last: Optional[int] = None):
-    bags = list(coffee_bag_db.values())
+    bags = coffee_bag_list()
     bags = [bag for bag in bags if bag.finish is None and not bag.start is None]
     sort_coffee_bags(bags)
 
@@ -117,17 +104,17 @@ def get_active_bags(n_last: Optional[int] = None):
     return bags
 
 
-@app.get("/uses")
-def get_uses(n_last: Optional[int] = None, bag_ids: Optional[List[str]] = None):
-    coffee_uses: List[CoffeeUse] = list(coffee_use_db.values())
+# @app.get("/uses")
+# def get_uses(n_last: Optional[int] = None, bag_ids: Optional[List[str]] = None):
+#     coffee_uses: List[CoffeeUse] = list(coffee_use_db.values())
 
-    if not bag_ids is None:
-        coffee_uses = [u for u in coffee_uses if u.bag_id in bag_ids]
+#     if not bag_ids is None:
+#         coffee_uses = [u for u in coffee_uses if u.bag_id in bag_ids]
 
-    coffee_uses.sort(key=lambda x: x.datetime)
-    if not n_last is None:
-        return coffee_uses[-n_last:]
-    return coffee_uses
+#     coffee_uses.sort(key=lambda x: x.datetime)
+#     if not n_last is None:
+#         return coffee_uses[-n_last:]
+#     return coffee_uses
 
 
 #### ---- Setters ---- ####
@@ -139,55 +126,74 @@ def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
         # return status.HTTP_401_UNAUTHORIZED
         print("password verification not yet implemented")
 
-    bag_id = "bag" + str(len(coffee_bag_db) + 1)
-    coffee_bag_db[bag_id] = bag
+    coffee_bag_db.put(jsonable_encoder(bag))
     return bag
 
 
-@app.put("/new_use/")
-def add_new_use(
-    bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
-):
+@app.delete("/delete_bag/")
+def delete_bag(bag_ids: List[str], password: str = "STAND_IN"):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
         print("password verification not yet implemented")
 
-    if not bag_id in coffee_bag_db.keys():
-        return status.HTTP_400_BAD_REQUEST
-
-    new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
-    use_id = "use" + str(len(coffee_use_db) + 1)
-    coffee_use_db[use_id] = new_coffee_use
-    return new_coffee_use
+    for id in bag_ids:
+        coffee_bag_db.delete(id)
 
 
-@app.put("/finish_bag/")
-def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
-    if not verify_password(password):
-        # return status.HTTP_401_UNAUTHORIZED
-        print("passwords not required, yet")
-
-    try:
-        bag = coffee_bag_db[bag_id]
-    except:
-        return status.HTTP_400_BAD_REQUEST
-
-    if bag.finish is None:
-        bag.finish = when
-        coffee_bag_db[bag_id] = bag
-        return bag
-    else:
-        return status.HTTP_400_BAD_REQUEST
-
-
-@app.patch("/update_bag/")
-def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
+@app.delete("/delete_all_bags/")
+def delete_all_bags(password: str = "STAND_IN"):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
         print("password verification not yet implemented")
 
-    if bag_id in coffee_bag_db.keys():
-        coffee_bag_db[bag_id] = bag
-        return bag
-    else:
-        return status.HTTP_400_BAD_REQUEST
+    for bag in coffee_bag_db.fetch():
+        coffee_bag_db.delete(bag["key"])
+
+
+# @app.put("/new_use/")
+# def add_new_use(
+#     bag_id: str, when: datetime = datetime.now(), password: str = "STAND_IN"
+# ):
+#     if not verify_password(password):
+#         # return status.HTTP_401_UNAUTHORIZED
+#         print("password verification not yet implemented")
+
+#     if not bag_id in coffee_bag_db.keys():
+#         return status.HTTP_400_BAD_REQUEST
+
+#     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
+#     use_id = "use" + str(len(coffee_use_db) + 1)
+#     coffee_use_db[use_id] = new_coffee_use
+#     return new_coffee_use
+
+
+# @app.put("/finish_bag/")
+# def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
+#     if not verify_password(password):
+#         # return status.HTTP_401_UNAUTHORIZED
+#         print("passwords not required, yet")
+
+#     try:
+#         bag = coffee_bag_db[bag_id]
+#     except:
+#         return status.HTTP_400_BAD_REQUEST
+
+#     if bag.finish is None:
+#         bag.finish = when
+#         coffee_bag_db[bag_id] = bag
+#         return bag
+#     else:
+#         return status.HTTP_400_BAD_REQUEST
+
+
+# @app.patch("/update_bag/")
+# def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
+#     if not verify_password(password):
+#         # return status.HTTP_401_UNAUTHORIZED
+#         print("password verification not yet implemented")
+
+#     if bag_id in coffee_bag_db.keys():
+#         coffee_bag_db[bag_id] = bag
+#         return bag
+#     else:
+#         return status.HTTP_400_BAD_REQUEST
