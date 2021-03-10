@@ -114,7 +114,7 @@ def get_active_bags(n_last: Optional[int] = None):
     return bags
 
 
-# @app.get("/uses")
+# @app.get("/uses/")
 # def get_uses(n_last: Optional[int] = None, bag_ids: Optional[List[str]] = None):
 #     coffee_uses: List[CoffeeUse] = list(coffee_use_db.values())
 
@@ -152,7 +152,7 @@ def add_new_bag(bag: CoffeeBag, password: str = "STAND_IN"):
     return {bag_key: bag}
 
 
-@app.patch("/finish_bag/")
+@app.patch("/finish_bag/{bag_id}")
 def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_IN"):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
@@ -172,7 +172,7 @@ def finished_bag(bag_id: str, when: date = date.today(), password: str = "STAND_
         return status.HTTP_400_BAD_REQUEST
 
 
-@app.patch("/update_bag/")
+@app.patch("/update_bag/{bag_id}")
 def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
@@ -183,7 +183,7 @@ def update_bag(bag_id: str, bag: CoffeeBag, password: str = ""):
     return bag
 
 
-@app.delete("/delete_bags/")
+@app.delete("/delete_multiple_bags/")
 def delete_bag(bag_ids: List[str], password: str = "STAND_IN"):
     if not verify_password(password):
         # return status.HTTP_401_UNAUTHORIZED
