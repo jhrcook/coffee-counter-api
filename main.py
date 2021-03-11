@@ -6,6 +6,7 @@ from math import ceil
 from typing import Any, Dict, List, Optional
 
 from deta import Deta
+from deta.base import Base
 from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
@@ -64,16 +65,24 @@ def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     return jsonable_encoder(use)
 
 
-def get_all_coffee_info() -> List[Dict[str, Any]]:
-    pages = coffee_bag_db.fetch(query=None, buffer=100, pages=10)
+def get_all_detabase_info(db: Base):
+    pages = db.fetch(query=None, buffer=100, pages=10)
     info: List[Dict[str, Any]] = []
     for page in pages:
         info += page
     return info
 
 
+def get_all_coffee_bag_info() -> List[Dict[str, Any]]:
+    return get_all_detabase_info(coffee_bag_db)
+
+
 def coffee_bag_list() -> List[CoffeeBag]:
-    return [convert_info_to_bag(info) for info in get_all_coffee_info()]
+    return [convert_info_to_bag(info) for info in get_all_coffee_bag_info()]
+
+
+def get_all_coffee_use_info() -> List[Dict[str, Any]]:
+    return get_all_detabase_info(coffee_use_db)
 
 
 #### ---- Security ---- ####
@@ -228,8 +237,16 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
     return bag
 
 
-@app.delete("/delete_multiple_bags/")
-def delete_bag(bag_ids: List[str], password: str):
+@app.delete("/delete_bag/{bag_id}")
+def delete_bag(bag_id: str, password: str):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
+
+    coffee_bag_db.delete(bag_id)
+
+
+@app.delete("/delete_bags/")
+def delete_bags(bag_ids: List[str], password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
@@ -242,19 +259,31 @@ def delete_all_bags(password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    for page in coffee_bag_db.fetch(query=None, buffer=20, pages=20):
-        for bag_info in page:
-            coffee_bag_db.delete(bag_info["key"])
+    for bag_info in get_all_coffee_bag_info():
+        coffee_bag_db.delete(bag_info["key"])
 
 
-# TODO: change update bag to separate functions (change name, change brand, change start, change finish, change weight)
-#   can do with a single function:
-#     require bag_id, key, and new value (cannot change value of "key", though)
-#     get bag
-#     turn into dict
-#     if key is in dict: change using Deta Base API for updating
-#     make change using key and value (check that key is in dict)
-#     convert back to bag
-#     return bag
+@app.delete("/delete_use/{id}")
+def delete_use(id: str, password: str):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
 
-# TODO: delete all uses, delete a list of uses, delete a use
+    coffee_use_db.delete(id)
+
+
+@app.delete("/delete_uses/")
+def delete_uses(ids: List[str], password: str):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
+
+    for id in ids:
+        coffee_use_db.delete(id)
+
+
+@app.delete("/delete_all_uses/")
+def delete_all_uses(password: str):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
+
+    for use_info in get_all_coffee_use_info():
+        coffee_use_db.delete(use_info["key"])
