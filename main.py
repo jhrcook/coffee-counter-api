@@ -70,8 +70,11 @@ def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     return jsonable_encoder(use)
 
 
-def get_all_detabase_info(db: Base):
-    pages = db.fetch(query=None, buffer=100, pages=10)
+def get_all_detabase_info(db: Base, n_items: int):
+    n_buffer = 100
+    n_pages = ceil(n_items / n_buffer) + 1  # add one just in case
+
+    pages = db.fetch(query=None, buffer=n_buffer, pages=n_pages)
     info: List[Dict[str, Any]] = []
     for page in pages:
         info += page
@@ -79,7 +82,8 @@ def get_all_detabase_info(db: Base):
 
 
 def get_all_coffee_bag_info() -> List[Dict[str, Any]]:
-    return get_all_detabase_info(coffee_bag_db)
+    num_bags = meta_db.get(key=META_DB_KEY)[MetaDataField.bag_count]
+    return get_all_detabase_info(coffee_bag_db, n_items=num_bags)
 
 
 def coffee_bag_list() -> List[CoffeeBag]:
@@ -87,7 +91,8 @@ def coffee_bag_list() -> List[CoffeeBag]:
 
 
 def get_all_coffee_use_info() -> List[Dict[str, Any]]:
-    return get_all_detabase_info(coffee_use_db)
+    num_uses = meta_db.get(key=META_DB_KEY)[MetaDataField.use_count]
+    return get_all_detabase_info(coffee_use_db, n_items=num_uses)
 
 
 #### ---- Meta DB ---- ####
