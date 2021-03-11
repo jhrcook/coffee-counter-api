@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime
+from enum import Enum
 from math import ceil
 from typing import Any, Dict, List, Optional
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
+from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 from keys import PROJECT_KEY
 
@@ -25,6 +27,9 @@ app = FastAPI()
 deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
 coffee_bag_db = deta.Base("coffee_bag_db")
 coffee_use_db = deta.Base("coffee_use_db")
+meta_db = deta.Base("meta_db")
+
+#### ---- Models ---- ####
 
 
 def make_key() -> str:
@@ -65,8 +70,11 @@ def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     return jsonable_encoder(use)
 
 
-def get_all_detabase_info(db: Base):
-    pages = db.fetch(query=None, buffer=100, pages=10)
+def get_all_detabase_info(db: Base, n_items: int):
+    n_buffer = 100
+    n_pages = ceil(n_items / n_buffer) + 1  # add one just in case
+
+    pages = db.fetch(query=None, buffer=n_buffer, pages=n_pages)
     info: List[Dict[str, Any]] = []
     for page in pages:
         info += page
@@ -74,7 +82,8 @@ def get_all_detabase_info(db: Base):
 
 
 def get_all_coffee_bag_info() -> List[Dict[str, Any]]:
-    return get_all_detabase_info(coffee_bag_db)
+    num_bags = meta_db.get(key=META_DB_KEY)[MetaDataField.bag_count]
+    return get_all_detabase_info(coffee_bag_db, n_items=num_bags)
 
 
 def coffee_bag_list() -> List[CoffeeBag]:
@@ -82,7 +91,42 @@ def coffee_bag_list() -> List[CoffeeBag]:
 
 
 def get_all_coffee_use_info() -> List[Dict[str, Any]]:
-    return get_all_detabase_info(coffee_use_db)
+    num_uses = meta_db.get(key=META_DB_KEY)[MetaDataField.use_count]
+    return get_all_detabase_info(coffee_use_db, n_items=num_uses)
+
+
+#### ---- Meta DB ---- ####
+
+META_DB_KEY = "KEY"
+
+
+class MetaDataField(str, Enum):
+    bag_count = "bag_count"
+    use_count = "use_count"
+
+
+def increment_meta_count(field: str, by: int):
+    try:
+        meta_db.update({field: meta_db.util.increment(by)}, key=META_DB_KEY)
+    except:
+        meta_db.update({field: by}, key=META_DB_KEY)
+    return None
+
+
+def increment_coffee_bag(by: int = 1):
+    increment_meta_count(MetaDataField.bag_count, by=by)
+
+
+def increment_coffee_use(by: int = 1):
+    increment_meta_count(MetaDataField.use_count, by=by)
+
+
+def reset_coffee_bag_count():
+    meta_db.update({MetaDataField.bag_count: 0}, key=META_DB_KEY)
+
+
+def reset_coffee_use_count():
+    meta_db.update({MetaDataField.use_count: 0}, key=META_DB_KEY)
 
 
 #### ---- Security ---- ####
@@ -103,9 +147,14 @@ async def root():
 #### ---- Getters ---- ####
 
 
-@app.get("/bags")
+@app.get("/bags/")
 def get_bags():
     return coffee_bag_list()
+
+
+@app.get("/number_of_bags/")
+def get_number_of_bags() -> int:
+    return meta_db.get(META_DB_KEY)[MetaDataField.bag_count]
 
 
 @app.get("/bag/{bag_id}")
@@ -162,6 +211,11 @@ def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
         return uses[-n_last:]
 
 
+@app.get("/number_of_uses/")
+def get_number_of_uses() -> int:
+    return meta_db.get(META_DB_KEY)[MetaDataField.use_count]
+
+
 #### ---- Setters ---- ####
 
 
@@ -170,8 +224,12 @@ def add_new_bag(bag: CoffeeBag, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    coffee_bag_db.put(convert_bag_to_info(bag))
-    return bag
+    try:
+        coffee_bag_db.put(convert_bag_to_info(bag))
+        increment_coffee_bag(1)
+        return bag
+    except:
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 @app.put("/new_use/{bag_id}")
@@ -184,8 +242,13 @@ def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
         return status.HTTP_400_BAD_REQUEST
 
     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
-    coffee_use_db.put(convert_use_to_info(new_coffee_use))
-    return new_coffee_use
+
+    try:
+        coffee_use_db.put(convert_use_to_info(new_coffee_use))
+        increment_coffee_use(1)
+        return new_coffee_use
+    except:
+        return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 @app.patch("/finish_bag/{bag_id}")
@@ -237,12 +300,18 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
     return bag
 
 
+def _delete_coffee_bag(bag_id: str):
+    if not coffee_bag_db.get(bag_id) is None:
+        coffee_bag_db.delete(bag_id)
+        increment_coffee_bag(by=-1)
+
+
 @app.delete("/delete_bag/{bag_id}")
 def delete_bag(bag_id: str, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    coffee_bag_db.delete(bag_id)
+    _delete_coffee_bag(bag_id=bag_id)
 
 
 @app.delete("/delete_bags/")
@@ -251,7 +320,7 @@ def delete_bags(bag_ids: List[str], password: str):
         return status.HTTP_401_UNAUTHORIZED
 
     for id in bag_ids:
-        coffee_bag_db.delete(id)
+        _delete_coffee_bag(bag_id=id)
 
 
 @app.delete("/delete_all_bags/")
@@ -261,6 +330,13 @@ def delete_all_bags(password: str):
 
     for bag_info in get_all_coffee_bag_info():
         coffee_bag_db.delete(bag_info["key"])
+    reset_coffee_bag_count()
+
+
+def _delete_coffee_use(id: str):
+    if not coffee_use_db.get(id) is None:
+        coffee_use_db.delete(id)
+        increment_coffee_use(by=-1)
 
 
 @app.delete("/delete_use/{id}")
@@ -268,7 +344,7 @@ def delete_use(id: str, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    coffee_use_db.delete(id)
+    _delete_coffee_use(id)
 
 
 @app.delete("/delete_uses/")
@@ -277,7 +353,7 @@ def delete_uses(ids: List[str], password: str):
         return status.HTTP_401_UNAUTHORIZED
 
     for id in ids:
-        coffee_use_db.delete(id)
+        _delete_coffee_use(id)
 
 
 @app.delete("/delete_all_uses/")
@@ -287,3 +363,4 @@ def delete_all_uses(password: str):
 
     for use_info in get_all_coffee_use_info():
         coffee_use_db.delete(use_info["key"])
+    reset_coffee_use_count()
