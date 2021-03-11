@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import uuid
 from datetime import date, datetime
 from math import ceil
 from typing import Any, Dict, List, Optional
@@ -8,7 +9,7 @@ from deta import Deta
 from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, PrivateAttr
 
 from keys import PROJECT_KEY
 
@@ -25,24 +26,26 @@ coffee_bag_db = deta.Base("coffee_bag_db")
 coffee_use_db = deta.Base("coffee_use_db")
 
 
+def make_key() -> str:
+    return str(uuid.uuid4())
+
+
 class CoffeeBag(BaseModel):
     brand: str
     name: str
     weight: float = 340.0
     start: Optional[date] = date.today()
     finish: Optional[date] = None
+    key: Optional[str] = Field(default_factory=make_key)
 
 
 class CoffeeUse(BaseModel):
     bag_id: str
     datetime: datetime
+    key: Optional[str] = Field(default_factory=make_key)
 
 
 #### ---- Database interface helpers ---- ####
-
-
-def get_all_coffee_info() -> List[Dict[str, Any]]:
-    return list(coffee_bag_db.fetch())[0]
 
 
 def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
@@ -61,12 +64,16 @@ def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     return jsonable_encoder(use)
 
 
+def get_all_coffee_info() -> List[Dict[str, Any]]:
+    pages = coffee_bag_db.fetch(query=None, buffer=100, pages=10)
+    info: List[Dict[str, Any]] = []
+    for page in pages:
+        info += page
+    return info
+
+
 def coffee_bag_list() -> List[CoffeeBag]:
     return [convert_info_to_bag(info) for info in get_all_coffee_info()]
-
-
-def coffee_bag_dict() -> Dict[str, CoffeeBag]:
-    return {info["key"]: convert_info_to_bag(info) for info in get_all_coffee_info()}
 
 
 #### ---- Security ---- ####
@@ -89,7 +96,7 @@ async def root():
 
 @app.get("/bags")
 def get_bags():
-    return coffee_bag_dict()
+    return coffee_bag_list()
 
 
 @app.get("/bag/{bag_id}")
@@ -149,25 +156,13 @@ def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
 #### ---- Setters ---- ####
 
 
-def find_bag_id(bag: CoffeeBag) -> Optional[str]:
-    queries = [{key: value} for key, value in jsonable_encoder(bag).items()]
-    bag_info = next(coffee_bag_db.fetch(queries, pages=1, buffer=1))[0]
-    if bag_info is None:
-        return None
-    return bag_info["key"]
-
-
 @app.put("/new_bag/")
 def add_new_bag(bag: CoffeeBag, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    coffee_bag_db.put(jsonable_encoder(bag))
-    bag_key = find_bag_id(bag)
-    if bag_key is None:
-        # This really should never happen since the bag was just created.
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
-    return {bag_key: bag}
+    coffee_bag_db.put(convert_bag_to_info(bag))
+    return bag
 
 
 @app.put("/new_use/{bag_id}")
@@ -204,12 +199,32 @@ def finished_bag(bag_id: str, password: str, when: date = date.today()):
 
 
 @app.patch("/update_bag/{bag_id}")
-def update_bag(bag_id: str, bag: CoffeeBag, password: str):
+def update_bag(bag_id: str, field: str, value: Any, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    bag_info = convert_bag_to_info(bag)
-    coffee_bag_db.update(bag_info, key=bag_id)
+    if field == "key":
+        # Cannot change "key" field.
+        return status.HTTP_400_BAD_REQUEST
+
+    bag_info = coffee_bag_db.get(bag_id)
+    if bag_info is None:
+        # ID not found.
+        return status.HTTP_400_BAD_REQUEST
+
+    if not field in bag_info.keys():
+        # Not a viable field in CoffeeBag model.
+        return status.HTTP_400_BAD_REQUEST
+
+    bag_info[field] = value
+    try:
+        bag = convert_info_to_bag(bag_info)
+    except:
+        # Error during data validation.
+        # Data is of wrong type (provide more feedback to user)
+        return status.HTTP_400_BAD_REQUEST
+
+    coffee_bag_db.update({field: value}, key=bag_id)
     return bag
 
 
@@ -230,3 +245,16 @@ def delete_all_bags(password: str):
     for page in coffee_bag_db.fetch(query=None, buffer=20, pages=20):
         for bag_info in page:
             coffee_bag_db.delete(bag_info["key"])
+
+
+# TODO: change update bag to separate functions (change name, change brand, change start, change finish, change weight)
+#   can do with a single function:
+#     require bag_id, key, and new value (cannot change value of "key", though)
+#     get bag
+#     turn into dict
+#     if key is in dict: change using Deta Base API for updating
+#     make change using key and value (check that key is in dict)
+#     convert back to bag
+#     return bag
+
+# TODO: delete all uses, delete a list of uses, delete a use
