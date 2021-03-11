@@ -142,9 +142,14 @@ async def root():
 #### ---- Getters ---- ####
 
 
-@app.get("/bags")
+@app.get("/bags/")
 def get_bags():
     return coffee_bag_list()
+
+
+@app.get("/number_of_bags/")
+def get_number_of_bags() -> int:
+    return meta_db.get(META_DB_KEY)[MetaDataField.bag_count]
 
 
 @app.get("/bag/{bag_id}")
@@ -199,6 +204,11 @@ def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
         return uses
     else:
         return uses[-n_last:]
+
+
+@app.get("/number_of_uses/")
+def get_number_of_uses() -> int:
+    return meta_db.get(META_DB_KEY)[MetaDataField.use_count]
 
 
 #### ---- Setters ---- ####
