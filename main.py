@@ -10,7 +10,7 @@ from deta.base import Base
 from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field
 
 from keys import PROJECT_KEY
 
