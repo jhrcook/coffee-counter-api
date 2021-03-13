@@ -60,15 +60,15 @@ class CoffeeBag(BaseModel):
 class CoffeeUse(BaseModel):
     bag_id: str
     datetime: datetime
-    key: Optional[str] = Field(default_factory=make_key)
+    _key: str = PrivateAttr(default_factory=make_key)
     _seconds: float = PrivateAttr(0)
 
     def __init__(self, **data):
         super().__init__(**data)
         self._seconds = unix_time_millis(self.datetime)
-
-
-datetime(2021, 1, 1, 1, 1, 1)
+        key = data.get("key")
+        if not key is None:
+            self._key = key
 
 
 #### ---- Database interface helpers ---- ####
@@ -86,13 +86,18 @@ def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
 
 def convert_info_to_use(info: Dict[str, Any]) -> CoffeeUse:
     return CoffeeUse(**info)
-    # When making `key` private, just assign the key from `info` *after* making the `bag`
 
 
 def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     info = jsonable_encoder(use)
     info["_seconds"] = use._seconds
+    info["key"] = use._key
     return info
+
+
+# TODO: Change this to Union[List[CoffeeUse], List[CoffeeBag]] with CoffeeBag gets private key.
+def keyedlist_to_dict(uses: List[CoffeeUse]) -> Dict[str, CoffeeUse]:
+    return {u._key: u for u in uses}
 
 
 def get_all_detabase_info(db: Base, n_items: int):
@@ -120,7 +125,12 @@ def get_all_coffee_use_info() -> List[Dict[str, Any]]:
     return get_all_detabase_info(coffee_use_db, n_items=num_uses)
 
 
-def get_coffee_uses_since(t: datetime) -> List[CoffeeUse]:
+def coffee_use_dict() -> Dict[str, CoffeeUse]:
+    uses = [convert_info_to_use(info) for info in get_all_coffee_use_info()]
+    return keyedlist_to_dict(uses)
+
+
+def get_coffee_uses_since(t: datetime) -> Dict[str, CoffeeUse]:
     t_ms = unix_time_millis(t)
     num_uses_total = num_coffee_uses()
     buffer = 250
@@ -131,7 +141,8 @@ def get_coffee_uses_since(t: datetime) -> List[CoffeeUse]:
     uses: List[CoffeeUse] = []
     for page in coffee_use_pages:
         uses += [convert_info_to_use(i) for i in page]
-    return uses
+
+    return keyedlist_to_dict(uses)
 
 
 #### ---- Meta DB ---- ####
@@ -287,9 +298,9 @@ def get_uses(
     uses.sort(key=lambda x: x.datetime)
 
     if len(uses) < n_last:
-        return uses
-    else:
-        return uses[-n_last:]
+        uses = uses[-n_last:]
+
+    return keyedlist_to_dict(uses)
 
 
 @app.get("/number_of_uses/")
@@ -298,7 +309,7 @@ def get_number_of_uses(since: Optional[datetime] = None) -> int:
         return num_coffee_uses()
 
     uses = get_coffee_uses_since(since)
-    return len(uses)
+    return len(uses.keys())
 
 
 #### ---- Setters ---- ####
