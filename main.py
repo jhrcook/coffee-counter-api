@@ -410,8 +410,8 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    if field == "_key":  # TODO: any key that starts with "_".
-        # Cannot change "key" field.
+    if field.startswith("_"):
+        # Cannot change private fields.
         return status.HTTP_400_BAD_REQUEST
 
     bag_info = coffee_bag_db.get(bag_id)
