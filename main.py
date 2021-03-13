@@ -12,6 +12,7 @@ from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
+from pydantic.fields import PrivateAttr
 
 from keys import PROJECT_KEY
 
@@ -20,13 +21,19 @@ pwd_context = CryptContext(schemes=["bcrypt"])
 
 app = FastAPI()
 
+EPOCH = datetime.utcfromtimestamp(0)
 
 #### ---- Datebases ---- ####
 
 deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
-coffee_bag_db = deta.Base("coffee_bag_db")
-coffee_use_db = deta.Base("coffee_use_db")
-meta_db = deta.Base("meta_db")
+# coffee_bag_db = deta.Base("coffee_bag_db")
+# coffee_use_db = deta.Base("coffee_use_db")
+# meta_db = deta.Base("meta_db")
+
+coffee_bag_db = deta.Base("coffee_bag_db-TEST")
+coffee_use_db = deta.Base("coffee_use_db-TEST")
+meta_db = deta.Base("meta_db-TEST")
+
 
 #### ---- Models ---- ####
 
@@ -44,10 +51,22 @@ class CoffeeBag(BaseModel):
     key: Optional[str] = Field(default_factory=make_key)
 
 
+def unix_time_millis(dt: datetime = datetime.now()) -> float:
+    return (dt - EPOCH).total_seconds() * 1000.0
+
+
 class CoffeeUse(BaseModel):
     bag_id: str
     datetime: datetime
     key: Optional[str] = Field(default_factory=make_key)
+    _seconds: float = PrivateAttr(0)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self._seconds = unix_time_millis(self.datetime)
+
+
+datetime(2021, 1, 1, 1, 1, 1)
 
 
 #### ---- Database interface helpers ---- ####
