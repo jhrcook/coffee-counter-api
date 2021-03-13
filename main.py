@@ -26,13 +26,14 @@ EPOCH = datetime.utcfromtimestamp(0)
 #### ---- Datebases ---- ####
 
 deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
-# coffee_bag_db = deta.Base("coffee_bag_db")
-# coffee_use_db = deta.Base("coffee_use_db")
-# meta_db = deta.Base("meta_db")
 
 coffee_bag_db = deta.Base("coffee_bag_db-TEST")
 coffee_use_db = deta.Base("coffee_use_db-TEST")
 meta_db = deta.Base("meta_db-TEST")
+
+# coffee_bag_db = deta.Base("coffee_bag_db")
+# coffee_use_db = deta.Base("coffee_use_db")
+# meta_db = deta.Base("meta_db")
 
 
 #### ---- Models ---- ####
@@ -42,17 +43,18 @@ def make_key() -> str:
     return str(uuid.uuid4())
 
 
+def unix_time_millis(dt: datetime = datetime.now()) -> float:
+    return (dt - EPOCH).total_seconds() * 1000.0
+
+
 class CoffeeBag(BaseModel):
     brand: str
     name: str
     weight: float = 340.0
     start: Optional[date] = date.today()
     finish: Optional[date] = None
+    active: bool = True
     key: Optional[str] = Field(default_factory=make_key)
-
-
-def unix_time_millis(dt: datetime = datetime.now()) -> float:
-    return (dt - EPOCH).total_seconds() * 1000.0
 
 
 class CoffeeUse(BaseModel):
@@ -236,8 +238,17 @@ def sort_coffee_bags(bags: List[CoffeeBag]):
 
 @app.get("/active_bags/")
 def get_active_bags(n_last: Optional[int] = None):
-    bags = coffee_bag_list()
-    bags = [bag for bag in bags if bag.finish is None and not bag.start is None]
+
+    n_bags = num_coffee_bags()
+    n_buffer = 100
+    n_pages = ceil(n_bags / n_buffer) + 1
+    bags: List[CoffeeBag] = []
+
+    for page in coffee_bag_db.fetch(
+        query={"active": True}, buffer=n_buffer, pages=n_pages
+    ):
+        bags = [convert_info_to_bag(i) for i in page]
+
     sort_coffee_bags(bags)
 
     if not n_last is None:
@@ -325,8 +336,8 @@ def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
         return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
-@app.patch("/finish_bag/{bag_id}")
-def finished_bag(bag_id: str, password: str, when: date = date.today()):
+@app.patch("/deactivate/{bag_id}")
+def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
@@ -336,8 +347,32 @@ def finished_bag(bag_id: str, password: str, when: date = date.today()):
 
     if bag_info["finish"] is None:
         bag_info["finish"] = when
+        bag_info["active"] = False
         coffee_bag_db.update(
-            updates={"finish": jsonable_encoder(when)}, key=bag_info["key"]
+            updates={"finish": jsonable_encoder(when), "active": False},
+            key=bag_info["key"],
+        )
+        return convert_info_to_bag(bag_info)
+    else:
+        return status.HTTP_400_BAD_REQUEST
+
+
+@app.patch("/activate/{bag_id}")
+def activate_bag(bag_id: str, password: str):
+    if not verify_password(password):
+        return status.HTTP_401_UNAUTHORIZED
+
+    bag_info = coffee_bag_db.get(key=bag_id)
+    if bag_info is None:
+        return status.HTTP_400_BAD_REQUEST
+
+    bag = convert_info_to_bag(bag_info)
+    if not bag.active:
+        bag_info["finish"] = None
+        bag_info["active"] = True
+        coffee_bag_db.update(
+            updates={"finish": None, "active": True},
+            key=bag_id,
         )
         return convert_info_to_bag(bag_info)
     else:
