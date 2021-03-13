@@ -12,7 +12,6 @@ from fastapi import FastAPI, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
 
 from keys import PROJECT_KEY
 
