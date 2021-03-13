@@ -27,13 +27,13 @@ EPOCH = datetime.utcfromtimestamp(0)
 
 deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
 
-coffee_bag_db = deta.Base("coffee_bag_db-TEST")
-coffee_use_db = deta.Base("coffee_use_db-TEST")
-meta_db = deta.Base("meta_db-TEST")
+# coffee_bag_db = deta.Base("coffee_bag_db-TEST")
+# coffee_use_db = deta.Base("coffee_use_db-TEST")
+# meta_db = deta.Base("meta_db-TEST")
 
-# coffee_bag_db = deta.Base("coffee_bag_db")
-# coffee_use_db = deta.Base("coffee_use_db")
-# meta_db = deta.Base("meta_db")
+coffee_bag_db = deta.Base("coffee_bag_db")
+coffee_use_db = deta.Base("coffee_use_db")
+meta_db = deta.Base("meta_db")
 
 
 #### ---- Models ---- ####
@@ -293,12 +293,16 @@ def query_coffee_uses_db(
     if len(query_prep.keys()) > 0:
         query = query_prep
 
+    print(query)
+    if since:
+        print(unix_time_millis(since) < unix_time_millis())
+
     for page in coffee_use_db.fetch(query=query, buffer=300, pages=pages):
         uses += [convert_info_to_use(i) for i in page]
 
     uses.sort(key=lambda x: x.datetime)
 
-    if len(uses) < n_last:
+    if len(uses) > n_last:
         uses = uses[-n_last:]
 
     return keyedlist_to_dict(uses)
