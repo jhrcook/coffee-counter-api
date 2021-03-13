@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from enum import Enum
 from math import ceil
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypeVar
 
 from deta import Deta
 from deta.base import Base
@@ -47,28 +47,37 @@ def unix_time_millis(dt: datetime = datetime.now()) -> float:
     return (dt - EPOCH).total_seconds() * 1000.0
 
 
-class CoffeeBag(BaseModel):
+class KeyedModel(BaseModel):
+    _key: str = PrivateAttr(default_factory=make_key)
+
+
+class CoffeeBag(KeyedModel):
     brand: str
     name: str
     weight: float = 340.0
     start: Optional[date] = date.today()
     finish: Optional[date] = None
     active: bool = True
-    key: Optional[str] = Field(default_factory=make_key)
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not (key := data.get("key")) is None:
+            self._key = key
 
 
-class CoffeeUse(BaseModel):
+class CoffeeUse(KeyedModel):
     bag_id: str
     datetime: datetime
-    _key: str = PrivateAttr(default_factory=make_key)
     _seconds: float = PrivateAttr(0)
 
     def __init__(self, **data):
         super().__init__(**data)
         self._seconds = unix_time_millis(self.datetime)
-        key = data.get("key")
-        if not key is None:
+        if not (key := data.get("key")) is None:
             self._key = key
+
+
+KeyedObjectType = TypeVar("KeyedObjectType", CoffeeBag, CoffeeUse)
 
 
 #### ---- Database interface helpers ---- ####
@@ -81,6 +90,7 @@ def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
 
 def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
     info = jsonable_encoder(bag)
+    info["key"] = bag._key
     return info
 
 
@@ -95,9 +105,8 @@ def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
     return info
 
 
-# TODO: Change this to Union[List[CoffeeUse], List[CoffeeBag]] with CoffeeBag gets private key.
-def keyedlist_to_dict(uses: List[CoffeeUse]) -> Dict[str, CoffeeUse]:
-    return {u._key: u for u in uses}
+def keyedlist_to_dict(x: List[KeyedObjectType]) -> Dict[str, KeyedObjectType]:
+    return {y._key: y for y in x}
 
 
 def get_all_detabase_info(db: Base, n_items: int):
@@ -118,6 +127,10 @@ def get_all_coffee_bag_info() -> List[Dict[str, Any]]:
 
 def coffee_bag_list() -> List[CoffeeBag]:
     return [convert_info_to_bag(info) for info in get_all_coffee_bag_info()]
+
+
+def coffee_bag_dict() -> Dict[str, CoffeeBag]:
+    return {x._key: x for x in coffee_bag_list()}
 
 
 def get_all_coffee_use_info() -> List[Dict[str, Any]]:
@@ -220,7 +233,7 @@ async def root():
 
 @app.get("/bags/")
 def get_bags():
-    return coffee_bag_list()
+    return coffee_bag_dict()
 
 
 @app.get("/number_of_bags/")
@@ -233,7 +246,8 @@ def get_bag_info(bag_id: str):
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
         return status.HTTP_400_BAD_REQUEST
-    return convert_info_to_bag(bag_info)
+    bag = convert_info_to_bag(bag_info)
+    return {bag._key: bag}
 
 
 def sort_coffee_bags(bags: List[CoffeeBag]):
@@ -265,7 +279,7 @@ def get_active_bags(n_last: Optional[int] = None):
     if not n_last is None:
         bags = bags[-n_last:]
 
-    return bags
+    return keyedlist_to_dict(bags)
 
 
 def today_at_midnight() -> datetime:
@@ -303,6 +317,7 @@ def get_uses(
     return keyedlist_to_dict(uses)
 
 
+# TODO: add ability to filter for bag -- share code with `get_uses()`.
 @app.get("/number_of_uses/")
 def get_number_of_uses(since: Optional[datetime] = None) -> int:
     if since is None:
@@ -323,7 +338,7 @@ def add_new_bag(bag: CoffeeBag, password: str):
     try:
         coffee_bag_db.put(convert_bag_to_info(bag))
         increment_coffee_bag(1)
-        return bag
+        return {bag._key: bag}
     except:
         return status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -342,7 +357,7 @@ def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
     try:
         coffee_use_db.put(convert_use_to_info(new_coffee_use))
         increment_coffee_use(1)
-        return new_coffee_use
+        return {new_coffee_use._key: new_coffee_use}
     except:
         return status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -363,7 +378,7 @@ def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
             updates={"finish": jsonable_encoder(when), "active": False},
             key=bag_info["key"],
         )
-        return convert_info_to_bag(bag_info)
+        return {bag_id: convert_info_to_bag(bag_info)}
     else:
         return status.HTTP_400_BAD_REQUEST
 
@@ -385,7 +400,7 @@ def activate_bag(bag_id: str, password: str):
             updates={"finish": None, "active": True},
             key=bag_id,
         )
-        return convert_info_to_bag(bag_info)
+        return {bag_id: convert_info_to_bag(bag_info)}
     else:
         return status.HTTP_400_BAD_REQUEST
 
@@ -395,7 +410,7 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
     if not verify_password(password):
         return status.HTTP_401_UNAUTHORIZED
 
-    if field == "key":
+    if field == "_key":  # TODO: any key that starts with "_".
         # Cannot change "key" field.
         return status.HTTP_400_BAD_REQUEST
 
@@ -417,7 +432,7 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
         return status.HTTP_400_BAD_REQUEST
 
     coffee_bag_db.update({field: value}, key=bag_id)
-    return bag
+    return {bag._key: bag}
 
 
 def _delete_coffee_bag(bag_id: str):
@@ -432,6 +447,7 @@ def delete_bag(bag_id: str, password: str):
         return status.HTTP_401_UNAUTHORIZED
 
     _delete_coffee_bag(bag_id=bag_id)
+    return None
 
 
 @app.delete("/delete_bags/")
@@ -441,6 +457,7 @@ def delete_bags(bag_ids: List[str], password: str):
 
     for id in bag_ids:
         _delete_coffee_bag(bag_id=id)
+    return None
 
 
 @app.delete("/delete_all_bags/")
@@ -451,6 +468,7 @@ def delete_all_bags(password: str):
     for bag_info in get_all_coffee_bag_info():
         coffee_bag_db.delete(bag_info["key"])
     reset_coffee_bag_count()
+    return None
 
 
 def _delete_coffee_use(id: str):
@@ -465,6 +483,7 @@ def delete_use(id: str, password: str):
         return status.HTTP_401_UNAUTHORIZED
 
     _delete_coffee_use(id)
+    return None
 
 
 @app.delete("/delete_uses/")
@@ -474,6 +493,7 @@ def delete_uses(ids: List[str], password: str):
 
     for id in ids:
         _delete_coffee_use(id)
+    return None
 
 
 @app.delete("/delete_all_uses/")
@@ -484,3 +504,4 @@ def delete_all_uses(password: str):
     for use_info in get_all_coffee_use_info():
         coffee_use_db.delete(use_info["key"])
     reset_coffee_use_count()
+    return None
