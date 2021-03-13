@@ -61,7 +61,8 @@ class CoffeeBag(KeyedModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        if not (key := data.get("key")) is None:
+        key = data.get("key")
+        if not key is None:
             self._key = key
 
 
@@ -73,7 +74,8 @@ class CoffeeUse(KeyedModel):
     def __init__(self, **data):
         super().__init__(**data)
         self._seconds = unix_time_millis(self.datetime)
-        if not (key := data.get("key")) is None:
+        key = data.get("key")
+        if not key is None:
             self._key = key
 
 
