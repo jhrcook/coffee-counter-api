@@ -143,21 +143,6 @@ def coffee_use_dict() -> Dict[str, CoffeeUse]:
     return keyedlist_to_dict(uses)
 
 
-def get_coffee_uses_since(t: datetime) -> Dict[str, CoffeeUse]:
-    t_ms = unix_time_millis(t)
-    num_uses_total = num_coffee_uses()
-    buffer = 250
-    pages = ceil(num_uses_total / buffer) + 1
-    query = {"_seconds?gt": t_ms}
-    coffee_use_pages = coffee_use_db.fetch(query=query, buffer=buffer, pages=pages)
-
-    uses: List[CoffeeUse] = []
-    for page in coffee_use_pages:
-        uses += [convert_info_to_use(i) for i in page]
-
-    return keyedlist_to_dict(uses)
-
-
 #### ---- Meta DB ---- ####
 
 META_DB_KEY = "KEY"
@@ -286,12 +271,14 @@ def today_at_midnight() -> datetime:
     return datetime.combine(date.today(), datetime.min.time())
 
 
-@app.get("/uses/")
-def get_uses(
-    n_last: int = Query(100, le=10000),
+def query_coffee_uses_db(
+    n_last: Optional[int] = None,
     since: Optional[datetime] = None,
     bag_id: Optional[str] = None,
-):
+) -> Dict[str, CoffeeUse]:
+    if n_last is None:
+        n_last = num_coffee_uses()
+
     buffer_size = 300
     pages = ceil(n_last / buffer_size)
     uses: List[CoffeeUse] = []
@@ -317,13 +304,23 @@ def get_uses(
     return keyedlist_to_dict(uses)
 
 
-# TODO: add ability to filter for bag -- share code with `get_uses()`.
+@app.get("/uses/")
+def get_uses(
+    n_last: int = Query(100, le=10000),
+    since: Optional[datetime] = None,
+    bag_id: Optional[str] = None,
+):
+    return query_coffee_uses_db(n_last=n_last, since=since, bag_id=bag_id)
+
+
 @app.get("/number_of_uses/")
-def get_number_of_uses(since: Optional[datetime] = None) -> int:
-    if since is None:
+def get_number_of_uses(
+    since: Optional[datetime] = None, bag_id: Optional[str] = None
+) -> int:
+    if since is None and bag_id is None:
         return num_coffee_uses()
 
-    uses = get_coffee_uses_since(since)
+    uses = query_coffee_uses_db(since=since, bag_id=bag_id)
     return len(uses.keys())
 
 
