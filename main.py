@@ -73,19 +73,24 @@ datetime(2021, 1, 1, 1, 1, 1)
 
 
 def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
-    return CoffeeBag(**info)
+    bag = CoffeeBag(**info)
+    return bag
 
 
 def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
-    return jsonable_encoder(bag)
+    info = jsonable_encoder(bag)
+    return info
 
 
 def convert_info_to_use(info: Dict[str, Any]) -> CoffeeUse:
     return CoffeeUse(**info)
+    # When making `key` private, just assign the key from `info` *after* making the `bag`
 
 
 def convert_use_to_info(use: CoffeeUse) -> Dict[str, Any]:
-    return jsonable_encoder(use)
+    info = jsonable_encoder(use)
+    info["_seconds"] = use._seconds
+    return info
 
 
 def get_all_detabase_info(db: Base, n_items: int):
@@ -100,7 +105,7 @@ def get_all_detabase_info(db: Base, n_items: int):
 
 
 def get_all_coffee_bag_info() -> List[Dict[str, Any]]:
-    num_bags = meta_db.get(key=META_DB_KEY)[MetaDataField.bag_count]
+    num_bags = num_coffee_bags()
     return get_all_detabase_info(coffee_bag_db, n_items=num_bags)
 
 
@@ -109,8 +114,22 @@ def coffee_bag_list() -> List[CoffeeBag]:
 
 
 def get_all_coffee_use_info() -> List[Dict[str, Any]]:
-    num_uses = meta_db.get(key=META_DB_KEY)[MetaDataField.use_count]
+    num_uses = num_coffee_uses()
     return get_all_detabase_info(coffee_use_db, n_items=num_uses)
+
+
+def get_coffee_uses_since(t: datetime) -> List[CoffeeUse]:
+    t_ms = unix_time_millis(t)
+    num_uses_total = num_coffee_uses()
+    buffer = 250
+    pages = ceil(num_uses_total / buffer) + 1
+    query = {"_seconds?gt": t_ms}
+    coffee_use_pages = coffee_use_db.fetch(query=query, buffer=buffer, pages=pages)
+
+    uses: List[CoffeeUse] = []
+    for page in coffee_use_pages:
+        uses += [convert_info_to_use(i) for i in page]
+    return uses
 
 
 #### ---- Meta DB ---- ####
@@ -123,11 +142,18 @@ class MetaDataField(str, Enum):
     use_count = "use_count"
 
 
-def increment_meta_count(field: str, by: int):
+def initialize_meta_db(bag_count: int = 0, use_count: int = 0):
+    meta_db.put(
+        {MetaDataField.bag_count: bag_count, MetaDataField.use_count: use_count},
+        key=META_DB_KEY,
+    )
+
+
+def increment_meta_count(field: MetaDataField, by: int):
     try:
         meta_db.update({field: meta_db.util.increment(by)}, key=META_DB_KEY)
     except:
-        meta_db.update({field: by}, key=META_DB_KEY)
+        initialize_meta_db(**{field.value: by})
     return None
 
 
@@ -145,6 +171,20 @@ def reset_coffee_bag_count():
 
 def reset_coffee_use_count():
     meta_db.update({MetaDataField.use_count: 0}, key=META_DB_KEY)
+
+
+def num_coffee_bags() -> int:
+    res: Optional[Dict[str, Any]] = meta_db.get(key=META_DB_KEY)
+    if res is None:
+        return 0
+    return res[MetaDataField.bag_count]
+
+
+def num_coffee_uses() -> int:
+    res: Optional[Dict[str, Any]] = meta_db.get(key=META_DB_KEY)
+    if res is None:
+        return 0
+    return res[MetaDataField.use_count]
 
 
 #### ---- Security ---- ####
@@ -172,7 +212,7 @@ def get_bags():
 
 @app.get("/number_of_bags/")
 def get_number_of_bags() -> int:
-    return meta_db.get(META_DB_KEY)[MetaDataField.bag_count]
+    return num_coffee_bags()
 
 
 @app.get("/bag/{bag_id}")
@@ -206,20 +246,32 @@ def get_active_bags(n_last: Optional[int] = None):
     return bags
 
 
+def today_at_midnight() -> datetime:
+    return datetime.combine(date.today(), datetime.min.time())
+
+
 @app.get("/uses/")
-def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
+def get_uses(
+    n_last: int = Query(100, le=10000),
+    since: Optional[datetime] = None,
+    bag_id: Optional[str] = None,
+):
     buffer_size = 300
     pages = ceil(n_last / buffer_size)
     uses: List[CoffeeUse] = []
 
-    if bag_id is None:
-        query = None
-    else:
-        query = {"bag_id": bag_id}
+    query_prep: Dict[str, Any] = {}
+    if not bag_id is None:
+        query_prep["bag_id"] = bag_id
+    if not since is None:
+        query_prep["_seconds?gt"] = unix_time_millis(since)
+
+    query: Optional[Dict[str, Any]] = None
+    if len(query_prep.keys()) > 0:
+        query = query_prep
 
     for page in coffee_use_db.fetch(query=query, buffer=300, pages=pages):
-        for use_info in page:
-            uses.append(convert_info_to_use(use_info))
+        uses += [convert_info_to_use(i) for i in page]
 
     uses.sort(key=lambda x: x.datetime)
 
@@ -230,8 +282,12 @@ def get_uses(n_last: int = Query(100, le=10000), bag_id: Optional[str] = None):
 
 
 @app.get("/number_of_uses/")
-def get_number_of_uses() -> int:
-    return meta_db.get(META_DB_KEY)[MetaDataField.use_count]
+def get_number_of_uses(since: Optional[datetime] = None) -> int:
+    if since is None:
+        return num_coffee_uses()
+
+    uses = get_coffee_uses_since(since)
+    return len(uses)
 
 
 #### ---- Setters ---- ####
