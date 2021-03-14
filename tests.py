@@ -1,8 +1,9 @@
 #!/usr/bun/env python3
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from random import choices, randint, random
 from string import printable
+from typing import Any, Dict
 from uuid import uuid1
 
 import pytest
@@ -39,17 +40,125 @@ def gen_datetime(min_year: int = 1900, max_year: int = datetime.now().year) -> d
     return start + (end - start) * random()
 
 
+def gen_date(min_year: int = 1900, max_year: int = datetime.now().year) -> date:
+    return gen_datetime().date()
+
+
 def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) -> str:
     return gen_datetime(min_year, max_year).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 #### ---- Data modifiers ---- ####
 
-# convert_info_to_bag
-# convert_bag_to_info
-# convert_info_to_use
-# convert_use_to_info
-# keyedlist_to_dict
+
+@pytest.mark.dev
+class TestModelDataModifiers:
+    def test_convert_info_to_bag(self):
+        info: Dict[str, Any] = {}
+        with pytest.raises(Exception):
+            _ = main.convert_info_to_bag(info)
+
+        info["brand"] = None
+        info["name"] = None
+        with pytest.raises(Exception):
+            _ = main.convert_info_to_bag(info)
+
+        info["brand"] = "BRAND"
+        with pytest.raises(Exception):
+            _ = main.convert_info_to_bag(info)
+
+        info["brand"] = None
+        info["name"] = "NAME"
+        with pytest.raises(Exception):
+            _ = main.convert_info_to_bag(info)
+
+        info["brand"] = "BRAND"
+        info["name"] = "NAME"
+        bag = main.convert_info_to_bag(info)
+        assert isinstance(bag, CoffeeBag)
+        assert bag.brand == "BRAND"
+        assert bag.name == "NAME"
+
+        info["key"] = "KEY"
+        bag = main.convert_info_to_bag(info)
+        assert bag._key == info["key"]
+
+        info["weight"] = 3940832.4980
+        info["start"] = gen_date()
+        info["finish"] = gen_date()
+        bag = main.convert_info_to_bag(info)
+        assert bag._key == info["key"]
+        assert bag.weight == info["weight"]
+        assert bag.start == info["start"]
+        assert bag.finish == info["finish"]
+
+        info["random_field"] = "RANDOM_VALUE"
+        bag = main.convert_info_to_bag(info)
+        assert isinstance(bag, CoffeeBag)
+
+    def test_convert_bag_to_info(self):
+        bag = CoffeeBag(brand="BRAND", name="NAME")
+        info = main.convert_bag_to_info(bag)
+        assert info["brand"] == bag.brand
+        assert info["name"] == bag.name
+        assert isinstance(bag._key, str)
+
+        info["key"] = "FAKE-KEY"
+        info = main.convert_bag_to_info(bag)
+        assert info["key"] == bag._key
+
+    def test_convert_info_to_bag_to_info(self):
+        info1: Dict[str, Any] = {
+            "brand": mock_password(),
+            "name": mock_password(),
+            "key": mock_password(),
+        }
+        bag = main.convert_info_to_bag(info1)
+        info2 = main.convert_bag_to_info(bag)
+        for key, item in info1.items():
+            assert info2[key] == item
+
+    def test_convert_info_to_use(self):
+        info: Dict[str, Any] = {}
+        with pytest.raises(Exception):
+            main.convert_info_to_use(info)
+
+        info["bag_id"] = "BAG_ID"
+        with pytest.raises(Exception):
+            main.convert_info_to_use(info)
+
+        info["bag_id"] = None
+        info["datetime"] = gen_datetime()
+        with pytest.raises(Exception):
+            main.convert_info_to_use(info)
+
+        info["bag_id"] = "BAG_ID"
+        use = main.convert_info_to_use(info)
+        assert use.bag_id == info["bag_id"]
+        assert use.datetime == info["datetime"]
+        assert isinstance(use._key, str)
+
+        info["key"] = mock_password()
+        use = main.convert_info_to_use(info)
+        assert use._key == info["key"]
+
+    def test_convert_use_to_info(self):
+        use = CoffeeUse(bag_id="BAG_ID", datetime=datetime.now())
+        info = main.convert_use_to_info(use)
+        assert info["key"] == use._key
+        assert info["datetime"] == jsonable_encoder(use.datetime)
+        assert info["bag_id"] == use.bag_id
+
+    def test_convert_info_to_use_info(self):
+        info1: Dict[str, Any] = {
+            "bag_id": mock_password(),
+            "datetime": jsonable_encoder(gen_datetime()),
+        }
+        use = main.convert_info_to_use(info1)
+        info2 = main.convert_use_to_info(use)
+        for key, value in info1.items():
+            assert info2[key] == value
+
 
 #### ---- Data base interfacing functions ---- ####
 
@@ -63,9 +172,6 @@ def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) 
 
 
 #### ---- Meta Database ---- ####
-
-# num_coffee_bags
-# num_coffee_uses
 
 
 @pytest.mark.getter
