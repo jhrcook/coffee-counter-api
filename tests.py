@@ -51,7 +51,6 @@ def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) 
 #### ---- Data modifiers ---- ####
 
 
-@pytest.mark.dev
 class TestModelDataModifiers:
     def test_convert_info_to_bag(self):
         info: Dict[str, Any] = {}

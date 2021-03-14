@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import uuid
 from datetime import date, datetime
 from enum import Enum
@@ -12,12 +13,15 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel
+from pydantic.errors import NoneIsNotAllowedError
 from pydantic.fields import PrivateAttr
 
 try:
     from keys import PROJECT_KEY
-except:
+except ModuleNotFoundError:
     # When running on CI services.
+    PROJECT_KEY = os.getenv("DETA_PROJECT_KEY", default="PROJECT_KEY")
+else:
     PROJECT_KEY = "PROJECT_KEY"
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"

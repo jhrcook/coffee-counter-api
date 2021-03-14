@@ -26,6 +26,8 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov requests
       - name: Describe python environment
+        env:
+          DETA_PROJECT_KEY=${{ secrets.DETA_PROJECT_KEY  }}
         run: |
           python3 --version
           which python3
