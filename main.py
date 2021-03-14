@@ -347,7 +347,7 @@ def query_coffee_uses_db(
 
 @app.get("/uses/", response_model=UseResponse)
 def get_uses(
-    n_last: int = Query(100, le=10000),
+    n_last: int = Query(100, ge=1, le=10000),
     since: Optional[datetime] = None,
     bag_id: Optional[str] = None,
 ) -> UseResponse:
