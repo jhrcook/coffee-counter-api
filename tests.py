@@ -14,14 +14,19 @@ from main import CoffeeBag, CoffeeUse, app, get_uses, today_at_midnight
 client = TestClient(app)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def mock_bag() -> CoffeeBag:
     return CoffeeBag(brand="FakeCoffee", name="Not real coffee")
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def mock_use() -> CoffeeUse:
     return CoffeeUse(bag_id="BAG-ID", datetime=datetime.now())
+
+
+def mock_password() -> str:
+    k = randint(10, 50)
+    return "".join(choices(list(printable), k=k))
 
 
 #### ---- Data modifiers ---- ####
@@ -49,77 +54,70 @@ def mock_use() -> CoffeeUse:
 # num_coffee_uses
 
 #### ---- Test Getters ---- ####
-
-
-@pytest.fixture
-def bag_id() -> str:
-    return "66383fb3-832f-4f1c-987a-f7e410ab5f71"
-
-
 @pytest.mark.getter
-def test_read_root():
-    response = client.get("/")
-    assert response.status_code == 200
+class TestGetters:
+    @pytest.fixture
+    def bag_id(self) -> str:
+        return "66383fb3-832f-4f1c-987a-f7e410ab5f71"
 
+    def test_read_root(self):
+        response = client.get("/")
+        assert response.status_code == 200
 
-@pytest.mark.getter
-def test_get_bags():
-    response = client.get("/bags/")
-    assert response.status_code == 200
-    bag_info = response.json()
-    for key, info in bag_info.items():
-        assert isinstance(key, str)
-        bag = CoffeeBag(_key=key, **info)
-        assert isinstance(bag, CoffeeBag)
+    def test_get_bags(self):
+        response = client.get("/bags/")
+        assert response.status_code == 200
+        bag_info = response.json()
+        for key, info in bag_info.items():
+            assert isinstance(key, str)
+            bag = CoffeeBag(_key=key, **info)
+            assert isinstance(bag, CoffeeBag)
 
+    def test_get_number_of_bags(self):
+        response = client.get("/number_of_bags/")
+        assert response.status_code == 200
+        assert isinstance(response.json(), int)
+        assert response.json() > 0
 
-@pytest.mark.getter
-def test_get_number_of_bags():
-    response = client.get("/number_of_bags/")
-    assert response.status_code == 200
-    assert isinstance(response.json(), int)
-    assert response.json() > 0
+    def test_get_bag_info(self, bag_id: str):
+        response = client.get(f"/bag/{bag_id}")
+        assert response.status_code == 200
 
+    def test_get_uses_defaults(self):
+        response = client.get("/uses/")
+        assert response.status_code == 200
+        assert len(response.json().keys()) > 0
+        for key, info in response.json().items():
+            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
 
-@pytest.mark.getter
-def test_get_bag_info(bag_id: str):
-    response = client.get(f"/bag/{bag_id}")
-    assert response.status_code == 200
+    def test_get_uses_n_last(self):
+        response = client.get("/uses/?n_last=5")
+        assert response.status_code == 200
+        assert len(response.json().keys()) == 5
+        for key, info in response.json().items():
+            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
 
+        response = client.get("/uses/?n_last=1")
+        assert response.status_code == 200
+        assert len(response.json().keys()) == 1
+        for key, info in response.json().items():
+            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
 
-@pytest.mark.getter
-def test_get_uses_defaults():
-    response = client.get("/uses/")
-    assert response.status_code == 200
-    assert len(response.json().keys()) > 0
-    for key, info in response.json().items():
-        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
+        response = client.get("/uses/?n_last=0")
+        assert response.status_code != 200
 
+    def test_get_uses_since(self):
+        _date = today_at_midnight().strftime("%Y-%m-%dT%H:%M:%S")
+        dates = [_date, _date + ".00"]  # try multiple date formats
+        for date in dates:
+            response = client.get(f"/uses/?since={date}")
+            assert response.status_code == 200
+            assert len(response.json().keys()) >= 0
+            for key, info in response.json().items():
+                assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
 
-@pytest.mark.getter
-def test_get_uses_n_last():
-    response = client.get("/uses/?n_last=5")
-    assert response.status_code == 200
-    assert len(response.json().keys()) == 5
-    for key, info in response.json().items():
-        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-    response = client.get("/uses/?n_last=1")
-    assert response.status_code == 200
-    assert len(response.json().keys()) == 1
-    for key, info in response.json().items():
-        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-    response = client.get("/uses/?n_last=0")
-    assert response.status_code != 200
-
-
-@pytest.mark.getter
-def test_get_uses_since():
-    _date = today_at_midnight().strftime("%Y-%m-%dT%H:%M:%S")
-    dates = [_date, _date + ".00"]  # try multiple date formats
-    for date in dates:
-        response = client.get(f"/uses/?since={date}")
+    def test_get_uses_bag_id(self, bag_id: str):
+        response = client.get(f"/uses/?bag_id={bag_id}")
         assert response.status_code == 200
         assert len(response.json().keys()) >= 0
         for key, info in response.json().items():
@@ -132,154 +130,129 @@ N_TRIES = 5
 
 
 @pytest.mark.setter
-def mock_password() -> str:
-    k = randint(10, 50)
-    return "".join(choices(list(printable), k=k))
+class TestSetterPasswords:
+    def test_add_new_bag_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.put(
+                f"/new_bag/?password={mock_password()}", json=jsonable_encoder(mock_bag)
+            )
+            assert response.status_code == 401
+        response = client.put("/new_bag/?password=", json=jsonable_encoder(mock_bag))
+        assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_add_new_bag_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
+    def test_add_new_use_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.put(
+                f"/new_use/{mock_bag._key}?password={mock_password()}",
+                json=jsonable_encoder(mock_bag),
+            )
+            assert response.status_code == 401
         response = client.put(
-            f"/new_bag/?password={mock_password()}", json=jsonable_encoder(mock_bag)
+            f"/new_use/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
         )
         assert response.status_code == 401
-    response = client.put("/new_bag/?password=", json=jsonable_encoder(mock_bag))
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_add_new_use_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
-        response = client.put(
-            f"/new_use/{mock_bag._key}?password={mock_password()}",
-            json=jsonable_encoder(mock_bag),
-        )
-        assert response.status_code == 401
-    response = client.put(
-        f"/new_use/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-    )
-    assert response.status_code == 401
-
-
-@pytest.mark.setter
-def test_deactivate_bag_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
+    def test_deactivate_bag_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.patch(
+                f"/deactivate/{mock_bag._key}?password={mock_password()}",
+                json=jsonable_encoder(mock_bag),
+            )
+            assert response.status_code == 401
         response = client.patch(
-            f"/deactivate/{mock_bag._key}?password={mock_password()}",
-            json=jsonable_encoder(mock_bag),
+            f"/deactivate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
         )
         assert response.status_code == 401
-    response = client.patch(
-        f"/deactivate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-    )
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_activate_bag_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
+    def test_activate_bag_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.patch(
+                f"/activate/{mock_bag._key}?password={mock_password()}",
+                json=jsonable_encoder(mock_bag),
+            )
+            assert response.status_code == 401
         response = client.patch(
-            f"/activate/{mock_bag._key}?password={mock_password()}",
-            json=jsonable_encoder(mock_bag),
+            f"/activate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
         )
         assert response.status_code == 401
-    response = client.patch(
-        f"/activate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-    )
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_update_bag_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
+    def test_update_bag_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.patch(
+                f"/update_bag/{mock_bag._key}?field=field&value=value&password={mock_password()}",
+                json=jsonable_encoder(mock_bag),
+            )
+            assert response.status_code == 401
         response = client.patch(
-            f"/update_bag/{mock_bag._key}?field=field&value=value&password={mock_password()}",
+            f"/update_bag/{mock_bag._key}?field=field&value=value&password=",
             json=jsonable_encoder(mock_bag),
         )
         assert response.status_code == 401
-    response = client.patch(
-        f"/update_bag/{mock_bag._key}?field=field&value=value&password=",
-        json=jsonable_encoder(mock_bag),
-    )
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_delete_bag_password(mock_bag: CoffeeBag):
-    for _ in range(N_TRIES):
+    def test_delete_bag_password(self, mock_bag: CoffeeBag):
+        for _ in range(N_TRIES):
+            response = client.delete(
+                f"/delete_bag/{mock_bag._key}?password={mock_password()}",
+                json=jsonable_encoder(mock_bag),
+            )
+            assert response.status_code == 401
         response = client.delete(
-            f"/delete_bag/{mock_bag._key}?password={mock_password()}",
+            f"/delete_bag/{mock_bag._key}?password=",
             json=jsonable_encoder(mock_bag),
         )
         assert response.status_code == 401
-    response = client.delete(
-        f"/delete_bag/{mock_bag._key}?password=",
-        json=jsonable_encoder(mock_bag),
-    )
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_delete_bags_password():
-    bag_ids = [str(uuid1()) for _ in range(4)]
-    for _ in range(N_TRIES):
+    def test_delete_bags_password(self):
+        bag_ids = [str(uuid1()) for _ in range(4)]
+        for _ in range(N_TRIES):
+            response = client.delete(
+                f"/delete_bags/?password={mock_password()}",
+                json=jsonable_encoder(bag_ids),
+            )
+            assert response.status_code == 401
         response = client.delete(
-            f"/delete_bags/?password={mock_password()}",
+            f"/delete_bags/?password=",
             json=jsonable_encoder(bag_ids),
         )
         assert response.status_code == 401
-    response = client.delete(
-        f"/delete_bags/?password=",
-        json=jsonable_encoder(bag_ids),
-    )
-    assert response.status_code == 401
 
+    # NOTE: Careful not to use random passwords for this test
+    def test_delete_all_bags_password(self):
+        response = client.delete("/delete_all_bags/?password=")
+        assert response.status_code == 401
+        response = client.delete("/delete_all_bags/?password=not-the-password")
+        assert response.status_code == 401
 
-# ! Careful not to use random passwords for this test
-@pytest.mark.setter
-def test_delete_all_bags_password():
-    response = client.delete("/delete_all_bags/?password=")
-    assert response.status_code == 401
-    response = client.delete("/delete_all_bags/?password=not-the-password")
-    assert response.status_code == 401
-
-
-@pytest.mark.setter
-def test_delete_use_password(mock_use: CoffeeUse):
-    for _ in range(N_TRIES):
+    def test_delete_use_password(self, mock_use: CoffeeUse):
+        for _ in range(N_TRIES):
+            response = client.delete(
+                f"/delete_use/{mock_use._key}?password={mock_password()}",
+                json=jsonable_encoder(mock_use),
+            )
+            assert response.status_code == 401
         response = client.delete(
-            f"/delete_use/{mock_use._key}?password={mock_password()}",
+            f"/delete_use/{mock_use._key}?password=",
             json=jsonable_encoder(mock_use),
         )
         assert response.status_code == 401
-    response = client.delete(
-        f"/delete_use/{mock_use._key}?password=",
-        json=jsonable_encoder(mock_use),
-    )
-    assert response.status_code == 401
 
-
-@pytest.mark.setter
-def test_delete_uses_password():
-    use_ids = [str(uuid1()) for _ in range(4)]
-    for _ in range(N_TRIES):
+    def test_delete_uses_password(self):
+        use_ids = [str(uuid1()) for _ in range(4)]
+        for _ in range(N_TRIES):
+            response = client.delete(
+                f"/delete_uses/?password={mock_password()}",
+                json=jsonable_encoder(use_ids),
+            )
+            assert response.status_code == 401
         response = client.delete(
-            f"/delete_uses/?password={mock_password()}",
+            f"/delete_uses/?password=",
             json=jsonable_encoder(use_ids),
         )
         assert response.status_code == 401
-    response = client.delete(
-        f"/delete_uses/?password=",
-        json=jsonable_encoder(use_ids),
-    )
-    assert response.status_code == 401
 
-
-# ! Careful not to use random passwords for this test
-@pytest.mark.setter
-def test_delete_all_uses_password():
-    response = client.delete("/delete_all_uses/?password=")
-    assert response.status_code == 401
-    response = client.delete("/delete_all_uses/?password=not-the-password")
-    assert response.status_code == 401
+    # NOTE: Careful not to use random passwords for this test
+    def test_delete_all_uses_password(self):
+        response = client.delete("/delete_all_uses/?password=")
+        assert response.status_code == 401
+        response = client.delete("/delete_all_uses/?password=not-the-password")
+        assert response.status_code == 401
