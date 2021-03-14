@@ -18,11 +18,10 @@ from pydantic.fields import PrivateAttr
 
 try:
     from keys import PROJECT_KEY
-except ModuleNotFoundError:
+except:
     # When running on CI services.
     PROJECT_KEY = os.getenv("DETA_PROJECT_KEY", default="PROJECT_KEY")
-else:
-    PROJECT_KEY = "PROJECT_KEY"
+
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
 pwd_context = CryptContext(schemes=["bcrypt"])
