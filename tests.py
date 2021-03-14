@@ -67,10 +67,23 @@ def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) 
 # num_coffee_bags
 # num_coffee_uses
 
+
+@pytest.mark.getter
+class TestMetaDatabase:
+    def test_num_coffee_bags(self):
+        n_bags = main.num_coffee_bags()
+        assert isinstance(n_bags, int)
+        assert n_bags > 0
+
+    def test_num_coffee_uses(self):
+        n_uses = main.num_coffee_uses()
+        assert isinstance(n_uses, int)
+        assert n_uses > 0
+
+
 #### ---- HTTP Exceptions ---- ####
 
 
-@pytest.mark.dev
 class TestHttpExceptions:
     def test_raise_bag_not_found(self):
         with pytest.raises(HTTPException) as err:
