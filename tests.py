@@ -6,9 +6,11 @@ from string import printable
 from uuid import uuid1
 
 import pytest
+from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 
+import main
 from main import CoffeeBag, CoffeeUse, app, today_at_midnight
 
 client = TestClient(app)
@@ -64,6 +66,30 @@ def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) 
 
 # num_coffee_bags
 # num_coffee_uses
+
+#### ---- HTTP Exceptions ---- ####
+
+
+@pytest.mark.dev
+class TestHttpExceptions:
+    def test_raise_bag_not_found(self):
+        with pytest.raises(HTTPException) as err:
+            main.raise_bag_not_found("not a real bag")
+        assert err.value.status_code == 404
+        assert "not a real bag" in err.value.detail
+
+    def test_raise_server_error(self):
+        with pytest.raises(HTTPException) as err:
+            main.raise_server_error(Exception("some exception"))
+        assert err.value.status_code == 500
+        assert "some exception" in err.value.detail
+
+    def test_raise_invalid_field(self):
+        with pytest.raises(HTTPException) as err:
+            main.raise_invalid_field("SOME FIELD")
+        assert err.value.status_code == 404
+        assert "SOME FIELD" in err.value.detail
+
 
 #### ---- Test Getters ---- ####
 @pytest.mark.getter
