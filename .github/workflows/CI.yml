@@ -24,7 +24,7 @@ jobs:
       - name: Install packages
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov requests
       - name: Describe python environment
         run: |
           python3 --version
