@@ -9,7 +9,7 @@ import pytest
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 
-from main import CoffeeBag, CoffeeUse, app
+from main import CoffeeBag, CoffeeUse, app, get_uses, today_at_midnight
 
 client = TestClient(app)
 
@@ -41,6 +41,7 @@ def mock_use() -> CoffeeUse:
 # get_all_coffee_use_info
 # coffee_use_dict
 # sort_coffee_bags
+
 
 #### ---- Meta Database ---- ####
 
@@ -84,6 +85,45 @@ def test_get_number_of_bags():
 def test_get_bag_info(bag_id: str):
     response = client.get(f"/bag/{bag_id}")
     assert response.status_code == 200
+
+
+@pytest.mark.getter
+def test_get_uses_defaults():
+    response = client.get("/uses/")
+    assert response.status_code == 200
+    assert len(response.json().keys()) > 0
+    for key, info in response.json().items():
+        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
+
+
+@pytest.mark.getter
+def test_get_uses_n_last():
+    response = client.get("/uses/?n_last=5")
+    assert response.status_code == 200
+    assert len(response.json().keys()) == 5
+    for key, info in response.json().items():
+        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
+
+    response = client.get("/uses/?n_last=1")
+    assert response.status_code == 200
+    assert len(response.json().keys()) == 1
+    for key, info in response.json().items():
+        assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
+
+    response = client.get("/uses/?n_last=0")
+    assert response.status_code != 200
+
+
+@pytest.mark.getter
+def test_get_uses_since():
+    _date = today_at_midnight().strftime("%Y-%m-%dT%H:%M:%S")
+    dates = [_date, _date + ".00"]  # try multiple date formats
+    for date in dates:
+        response = client.get(f"/uses/?since={date}")
+        assert response.status_code == 200
+        assert len(response.json().keys()) >= 0
+        for key, info in response.json().items():
+            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
 
 
 #### ---- Test Passwords ---- ####
@@ -196,6 +236,15 @@ def test_delete_bags_password():
     assert response.status_code == 401
 
 
+# ! Careful not to use random passwords for this test
+@pytest.mark.setter
+def test_delete_all_bags_password():
+    response = client.delete("/delete_all_bags/?password=")
+    assert response.status_code == 401
+    response = client.delete("/delete_all_bags/?password=not-the-password")
+    assert response.status_code == 401
+
+
 @pytest.mark.setter
 def test_delete_use_password(mock_use: CoffeeUse):
     for _ in range(N_TRIES):
@@ -224,4 +273,13 @@ def test_delete_uses_password():
         f"/delete_uses/?password=",
         json=jsonable_encoder(use_ids),
     )
+    assert response.status_code == 401
+
+
+# ! Careful not to use random passwords for this test
+@pytest.mark.setter
+def test_delete_all_uses_password():
+    response = client.delete("/delete_all_uses/?password=")
+    assert response.status_code == 401
+    response = client.delete("/delete_all_uses/?password=not-the-password")
     assert response.status_code == 401
