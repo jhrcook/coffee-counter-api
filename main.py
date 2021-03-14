@@ -36,15 +36,22 @@ coffee_use_db = deta.Base("coffee_use_db")
 meta_db = deta.Base("meta_db")
 
 
+#### ---- Dates and Times ---- ####
+
+
+def today_at_midnight() -> datetime:
+    return datetime.combine(date.today(), datetime.min.time())
+
+
+def unix_time_millis(dt: datetime = datetime.now()) -> float:
+    return (dt - EPOCH).total_seconds() * 1000.0
+
+
 #### ---- Models ---- ####
 
 
 def make_key() -> str:
     return str(uuid.uuid4())
-
-
-def unix_time_millis(dt: datetime = datetime.now()) -> float:
-    return (dt - EPOCH).total_seconds() * 1000.0
 
 
 class KeyedModel(BaseModel):
@@ -228,10 +235,21 @@ def raise_server_error(err: Exception) -> None:
     raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(err))
 
 
+def raise_invalid_field(field: str):
+    raise HTTPException(
+        status.HTTP_404_NOT_FOUND, detail=f"Field '{field}' is not a valid field."
+    )
+
+
+#### ---- Response Models ---- ####
+
+BagResponse = Dict[str, CoffeeBag]
+UseResponse = Dict[str, CoffeeUse]
+
 #### ---- Start Page ---- ####
 
 
-@app.get("/")
+@app.get("/", response_description="A 'Welcome to the API' message!")
 async def root():
     return {"message": "Coffee Counter API"}
 
@@ -239,18 +257,18 @@ async def root():
 #### ---- Getters ---- ####
 
 
-@app.get("/bags/")
-def get_bags():
+@app.get("/bags/", response_model=BagResponse)
+def get_bags() -> BagResponse:
     return coffee_bag_dict()
 
 
-@app.get("/number_of_bags/")
+@app.get("/number_of_bags/", response_model=int)
 def get_number_of_bags() -> int:
     return num_coffee_bags()
 
 
-@app.get("/bag/{bag_id}")
-def get_bag_info(bag_id: str):
+@app.get("/bag/{bag_id}", response_model=BagResponse)
+def get_bag_info(bag_id: str) -> BagResponse:
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
         raise_bag_not_found(bag_id)
@@ -269,8 +287,8 @@ def sort_coffee_bags(bags: List[CoffeeBag]):
     return None
 
 
-@app.get("/active_bags/")
-def get_active_bags(n_last: Optional[int] = None):
+@app.get("/active_bags/", response_model=BagResponse)
+def get_active_bags(n_last: Optional[int] = None) -> BagResponse:
 
     n_bags = num_coffee_bags()
     n_buffer = 100
@@ -290,15 +308,11 @@ def get_active_bags(n_last: Optional[int] = None):
     return keyedlist_to_dict(bags)
 
 
-def today_at_midnight() -> datetime:
-    return datetime.combine(date.today(), datetime.min.time())
-
-
 def query_coffee_uses_db(
     n_last: Optional[int] = None,
     since: Optional[datetime] = None,
     bag_id: Optional[str] = None,
-) -> Dict[str, CoffeeUse]:
+) -> UseResponse:
     if n_last is None:
         n_last = num_coffee_uses()
 
@@ -331,16 +345,16 @@ def query_coffee_uses_db(
     return keyedlist_to_dict(uses)
 
 
-@app.get("/uses/")
+@app.get("/uses/", response_model=UseResponse)
 def get_uses(
     n_last: int = Query(100, le=10000),
     since: Optional[datetime] = None,
     bag_id: Optional[str] = None,
-):
+) -> UseResponse:
     return query_coffee_uses_db(n_last=n_last, since=since, bag_id=bag_id)
 
 
-@app.get("/number_of_uses/")
+@app.get("/number_of_uses/", response_model=int)
 def get_number_of_uses(
     since: Optional[datetime] = None, bag_id: Optional[str] = None
 ) -> int:
@@ -354,20 +368,23 @@ def get_number_of_uses(
 #### ---- Setters ---- ####
 
 
-@app.put("/new_bag/")
-def add_new_bag(bag: CoffeeBag, password: str):
+@app.put("/new_bag/", response_model=Dict[str, CoffeeBag])
+def add_new_bag(bag: CoffeeBag, password: str) -> Dict[str, CoffeeBag]:
     verify_password(password)
 
     try:
         coffee_bag_db.put(convert_bag_to_info(bag))
         increment_coffee_bag(1)
-        return {bag._key: bag}
     except Exception as err:
         raise_server_error(err)
 
+    return {bag._key: bag}
 
-@app.put("/new_use/{bag_id}")
-def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
+
+@app.put("/new_use/{bag_id}", response_model=UseResponse)
+def add_new_use(
+    bag_id: str, password: str, when: datetime = datetime.now()
+) -> UseResponse:
     verify_password(password)
 
     bag_info = coffee_bag_db.get(bag_id)
@@ -379,13 +396,16 @@ def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
     try:
         coffee_use_db.put(convert_use_to_info(new_coffee_use))
         increment_coffee_use(1)
-        return {new_coffee_use._key: new_coffee_use}
     except Exception as err:
         raise_server_error(err)
 
+    return {new_coffee_use._key: new_coffee_use}
 
-@app.patch("/deactivate/{bag_id}")
-def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
+
+@app.patch("/deactivate/{bag_id}", response_model=BagResponse)
+def deactivate_bag(
+    bag_id: str, password: str, when: date = date.today()
+) -> BagResponse:
     verify_password(password)
 
     bag_info = coffee_bag_db.get(key=bag_id)
@@ -407,13 +427,13 @@ def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
         )
 
 
-@app.patch("/activate/{bag_id}")
-def activate_bag(bag_id: str, password: str):
+@app.patch("/activate/{bag_id}", response_model=BagResponse)
+def activate_bag(bag_id: str, password: str) -> BagResponse:
     verify_password(password)
 
     bag_info = coffee_bag_db.get(key=bag_id)
     if bag_info is None:
-        return status.HTTP_400_BAD_REQUEST
+        raise_bag_not_found(bag_id)
 
     bag = convert_info_to_bag(bag_info)
     if not bag.active:
@@ -431,13 +451,13 @@ def activate_bag(bag_id: str, password: str):
         )
 
 
-@app.patch("/update_bag/{bag_id}")
-def update_bag(bag_id: str, field: str, value: Any, password: str):
+@app.patch("/update_bag/{bag_id}", response_model=BagResponse)
+def update_bag(bag_id: str, field: str, value: Any, password: str) -> BagResponse:
     verify_password(password)
 
     if field.startswith("_"):
         # Cannot change private fields.
-        return status.HTTP_400_BAD_REQUEST
+        raise_invalid_field(field)
 
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
@@ -445,9 +465,7 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
 
     if not field in bag_info.keys():
         # Not a viable field in CoffeeBag model.
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, detail=f"Field '{field}' is not a valid field."
-        )
+        raise_invalid_field(field)
 
     bag_info[field] = value
     try:
