@@ -41,7 +41,7 @@ def gen_datetime(min_year: int = 1900, max_year: int = datetime.now().year) -> d
 
 
 def gen_date(min_year: int = 1900, max_year: int = datetime.now().year) -> date:
-    return gen_datetime().date()
+    return gen_datetime(min_year, max_year).date()
 
 
 def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) -> str:
