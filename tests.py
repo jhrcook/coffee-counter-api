@@ -3,7 +3,6 @@
 from datetime import datetime
 from random import choices, randint
 from string import printable
-from typing import Any, Dict
 from uuid import uuid1
 
 import pytest
@@ -25,24 +24,80 @@ def mock_use() -> CoffeeUse:
     return CoffeeUse(bag_id="BAG-ID", datetime=datetime.now())
 
 
+#### ---- Data modifiers ---- ####
+
+# convert_info_to_bag
+# convert_bag_to_info
+# convert_info_to_use
+# convert_use_to_info
+# keyedlist_to_dict
+
+#### ---- Data base interfacing functions ---- ####
+
+# get_all_detabase_info
+# get_all_coffee_bag_info
+# coffee_bag_list
+# coffee_bag_dict
+# get_all_coffee_use_info
+# coffee_use_dict
+# sort_coffee_bags
+
+#### ---- Meta Database ---- ####
+
+# num_coffee_bags
+# num_coffee_uses
+
 #### ---- Test Getters ---- ####
 
 
+@pytest.fixture
+def bag_id() -> str:
+    return "66383fb3-832f-4f1c-987a-f7e410ab5f71"
+
+
+@pytest.mark.getter
 def test_read_root():
     response = client.get("/")
     assert response.status_code == 200
 
 
+@pytest.mark.getter
+def test_get_bags():
+    response = client.get("/bags/")
+    assert response.status_code == 200
+    bag_info = response.json()
+    for key, info in bag_info.items():
+        assert isinstance(key, str)
+        bag = CoffeeBag(_key=key, **info)
+        assert isinstance(bag, CoffeeBag)
+
+
+@pytest.mark.getter
+def test_get_number_of_bags():
+    response = client.get("/number_of_bags/")
+    assert response.status_code == 200
+    assert isinstance(response.json(), int)
+    assert response.json() > 0
+
+
+@pytest.mark.getter
+def test_get_bag_info(bag_id: str):
+    response = client.get(f"/bag/{bag_id}")
+    assert response.status_code == 200
+
+
 #### ---- Test Passwords ---- ####
 
-N_TRIES = 1
+N_TRIES = 5
 
 
+@pytest.mark.setter
 def mock_password() -> str:
     k = randint(10, 50)
     return "".join(choices(list(printable), k=k))
 
 
+@pytest.mark.setter
 def test_add_new_bag_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.put(
@@ -53,6 +108,7 @@ def test_add_new_bag_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_add_new_use_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.put(
@@ -66,6 +122,7 @@ def test_add_new_use_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_deactivate_bag_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.patch(
@@ -79,6 +136,7 @@ def test_deactivate_bag_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_activate_bag_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.patch(
@@ -92,6 +150,7 @@ def test_activate_bag_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_update_bag_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.patch(
@@ -106,6 +165,7 @@ def test_update_bag_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_delete_bag_password(mock_bag: CoffeeBag):
     for _ in range(N_TRIES):
         response = client.delete(
@@ -120,6 +180,7 @@ def test_delete_bag_password(mock_bag: CoffeeBag):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_delete_bags_password():
     bag_ids = [str(uuid1()) for _ in range(4)]
     for _ in range(N_TRIES):
@@ -135,6 +196,7 @@ def test_delete_bags_password():
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_delete_use_password(mock_use: CoffeeUse):
     for _ in range(N_TRIES):
         response = client.delete(
@@ -149,6 +211,7 @@ def test_delete_use_password(mock_use: CoffeeUse):
     assert response.status_code == 401
 
 
+@pytest.mark.setter
 def test_delete_uses_password():
     use_ids = [str(uuid1()) for _ in range(4)]
     for _ in range(N_TRIES):

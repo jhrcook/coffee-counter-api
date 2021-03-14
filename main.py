@@ -152,6 +152,17 @@ def coffee_use_dict() -> Dict[str, CoffeeUse]:
     return keyedlist_to_dict(uses)
 
 
+def sort_coffee_bags(bags: List[CoffeeBag]):
+    def f(b: CoffeeBag) -> date:
+        if b.start is None:
+            return date.today()
+        else:
+            return b.start
+
+    bags.sort(key=f)
+    return None
+
+
 #### ---- Meta DB ---- ####
 
 META_DB_KEY = "KEY"
@@ -274,17 +285,6 @@ def get_bag_info(bag_id: str) -> BagResponse:
         raise_bag_not_found(bag_id)
     bag = convert_info_to_bag(bag_info)
     return {bag._key: bag}
-
-
-def sort_coffee_bags(bags: List[CoffeeBag]):
-    def f(b: CoffeeBag) -> date:
-        if b.start is None:
-            return date.today()
-        else:
-            return b.start
-
-    bags.sort(key=f)
-    return None
 
 
 @app.get("/active_bags/", response_model=BagResponse)
