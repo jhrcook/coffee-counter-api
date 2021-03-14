@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 import uuid
 from datetime import date, datetime
 from enum import Enum
@@ -12,9 +13,15 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel
+from pydantic.errors import NoneIsNotAllowedError
 from pydantic.fields import PrivateAttr
 
-from keys import PROJECT_KEY
+try:
+    from keys import PROJECT_KEY
+except:
+    # When running on CI services.
+    PROJECT_KEY = os.getenv("DETA_PROJECT_KEY", default="PROJECT_KEY")
+
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
 pwd_context = CryptContext(schemes=["bcrypt"])
@@ -152,6 +159,17 @@ def coffee_use_dict() -> Dict[str, CoffeeUse]:
     return keyedlist_to_dict(uses)
 
 
+def sort_coffee_bags(bags: List[CoffeeBag]):
+    def f(b: CoffeeBag) -> date:
+        if b.start is None:
+            return date.today()
+        else:
+            return b.start
+
+    bags.sort(key=f)
+    return None
+
+
 #### ---- Meta DB ---- ####
 
 META_DB_KEY = "KEY"
@@ -276,19 +294,8 @@ def get_bag_info(bag_id: str) -> BagResponse:
     return {bag._key: bag}
 
 
-def sort_coffee_bags(bags: List[CoffeeBag]):
-    def f(b: CoffeeBag) -> date:
-        if b.start is None:
-            return date.today()
-        else:
-            return b.start
-
-    bags.sort(key=f)
-    return None
-
-
 @app.get("/active_bags/", response_model=BagResponse)
-def get_active_bags(n_last: Optional[int] = None) -> BagResponse:
+def get_active_bags(n_last: Optional[int] = Query(None, ge=1)) -> BagResponse:
 
     n_bags = num_coffee_bags()
     n_buffer = 100
@@ -347,7 +354,7 @@ def query_coffee_uses_db(
 
 @app.get("/uses/", response_model=UseResponse)
 def get_uses(
-    n_last: int = Query(100, le=10000),
+    n_last: int = Query(100, ge=1, le=10000),
     since: Optional[datetime] = None,
     bag_id: Optional[str] = None,
 ) -> UseResponse:
