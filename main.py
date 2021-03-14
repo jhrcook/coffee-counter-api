@@ -288,7 +288,7 @@ def get_bag_info(bag_id: str) -> BagResponse:
 
 
 @app.get("/active_bags/", response_model=BagResponse)
-def get_active_bags(n_last: Optional[int] = None) -> BagResponse:
+def get_active_bags(n_last: Optional[int] = Query(None, ge=1)) -> BagResponse:
 
     n_bags = num_coffee_bags()
     n_buffer = 100
