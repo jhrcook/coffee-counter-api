@@ -8,10 +8,10 @@ from typing import Any, Dict, List, Optional, TypeVar
 
 from deta import Deta
 from deta.base import Base
-from fastapi import FastAPI, Query, status
+from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic.fields import PrivateAttr
 
 from keys import PROJECT_KEY
@@ -203,8 +203,29 @@ def num_coffee_uses() -> int:
 #### ---- Security ---- ####
 
 
-def verify_password(password: str) -> bool:
+def compare_password(password: str) -> bool:
     return pwd_context.verify(password, HASHED_PASSWORD)
+
+
+def verify_password(password: str) -> bool:
+    if not compare_password(password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password."
+        )
+    return True
+
+
+#### ---- Error messages ---- ####
+
+
+def raise_bag_not_found(bag_id: str) -> None:
+    raise HTTPException(
+        status.HTTP_404_NOT_FOUND, detail=f"Bag with key '{bag_id}' not found."
+    )
+
+
+def raise_server_error(err: Exception) -> None:
+    raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(err))
 
 
 #### ---- Start Page ---- ####
@@ -232,7 +253,7 @@ def get_number_of_bags() -> int:
 def get_bag_info(bag_id: str):
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
-        return status.HTTP_400_BAD_REQUEST
+        raise_bag_not_found(bag_id)
     bag = convert_info_to_bag(bag_info)
     return {bag._key: bag}
 
@@ -335,25 +356,23 @@ def get_number_of_uses(
 
 @app.put("/new_bag/")
 def add_new_bag(bag: CoffeeBag, password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     try:
         coffee_bag_db.put(convert_bag_to_info(bag))
         increment_coffee_bag(1)
         return {bag._key: bag}
-    except:
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
+    except Exception as err:
+        raise_server_error(err)
 
 
 @app.put("/new_use/{bag_id}")
 def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
-        return status.HTTP_400_BAD_REQUEST
+        raise_bag_not_found(bag_id)
 
     new_coffee_use = CoffeeUse(bag_id=bag_id, datetime=when)
 
@@ -361,20 +380,19 @@ def add_new_use(bag_id: str, password: str, when: datetime = datetime.now()):
         coffee_use_db.put(convert_use_to_info(new_coffee_use))
         increment_coffee_use(1)
         return {new_coffee_use._key: new_coffee_use}
-    except:
-        return status.HTTP_500_INTERNAL_SERVER_ERROR
+    except Exception as err:
+        raise_server_error(err)
 
 
 @app.patch("/deactivate/{bag_id}")
 def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     bag_info = coffee_bag_db.get(key=bag_id)
     if bag_info is None:
-        return status.HTTP_400_BAD_REQUEST
+        raise_bag_not_found(bag_id)
 
-    if bag_info["finish"] is None:
+    if bag_info["finish"] is None and bag_info["active"]:
         bag_info["finish"] = when
         bag_info["active"] = False
         coffee_bag_db.update(
@@ -383,13 +401,15 @@ def deactivate_bag(bag_id: str, password: str, when: date = date.today()):
         )
         return {bag_id: convert_info_to_bag(bag_info)}
     else:
-        return status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Bag with key '{bag_id}' is not active (cannot deactivate).",
+        )
 
 
 @app.patch("/activate/{bag_id}")
 def activate_bag(bag_id: str, password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     bag_info = coffee_bag_db.get(key=bag_id)
     if bag_info is None:
@@ -405,13 +425,15 @@ def activate_bag(bag_id: str, password: str):
         )
         return {bag_id: convert_info_to_bag(bag_info)}
     else:
-        return status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Bag with key '{bag_id}' is already active (cannot activate).",
+        )
 
 
 @app.patch("/update_bag/{bag_id}")
 def update_bag(bag_id: str, field: str, value: Any, password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     if field.startswith("_"):
         # Cannot change private fields.
@@ -419,20 +441,22 @@ def update_bag(bag_id: str, field: str, value: Any, password: str):
 
     bag_info = coffee_bag_db.get(bag_id)
     if bag_info is None:
-        # ID not found.
-        return status.HTTP_400_BAD_REQUEST
+        raise_bag_not_found(bag_id)
 
     if not field in bag_info.keys():
         # Not a viable field in CoffeeBag model.
-        return status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=f"Field '{field}' is not a valid field."
+        )
 
     bag_info[field] = value
     try:
         bag = convert_info_to_bag(bag_info)
     except:
-        # Error during data validation.
-        # Data is of wrong type (provide more feedback to user)
-        return status.HTTP_400_BAD_REQUEST
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Unable to convert data into CoffeeBag object.",
+        )
 
     coffee_bag_db.update({field: value}, key=bag_id)
     return {bag._key: bag}
@@ -446,8 +470,7 @@ def _delete_coffee_bag(bag_id: str):
 
 @app.delete("/delete_bag/{bag_id}")
 def delete_bag(bag_id: str, password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     _delete_coffee_bag(bag_id=bag_id)
     return None
@@ -455,8 +478,7 @@ def delete_bag(bag_id: str, password: str):
 
 @app.delete("/delete_bags/")
 def delete_bags(bag_ids: List[str], password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     for id in bag_ids:
         _delete_coffee_bag(bag_id=id)
@@ -465,8 +487,7 @@ def delete_bags(bag_ids: List[str], password: str):
 
 @app.delete("/delete_all_bags/")
 def delete_all_bags(password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     for bag_info in get_all_coffee_bag_info():
         coffee_bag_db.delete(bag_info["key"])
@@ -482,8 +503,7 @@ def _delete_coffee_use(id: str):
 
 @app.delete("/delete_use/{id}")
 def delete_use(id: str, password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     _delete_coffee_use(id)
     return None
@@ -491,8 +511,7 @@ def delete_use(id: str, password: str):
 
 @app.delete("/delete_uses/")
 def delete_uses(ids: List[str], password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     for id in ids:
         _delete_coffee_use(id)
@@ -501,8 +520,7 @@ def delete_uses(ids: List[str], password: str):
 
 @app.delete("/delete_all_uses/")
 def delete_all_uses(password: str):
-    if not verify_password(password):
-        return status.HTTP_401_UNAUTHORIZED
+    verify_password(password)
 
     for use_info in get_all_coffee_use_info():
         coffee_use_db.delete(use_info["key"])
