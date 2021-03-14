@@ -14,7 +14,11 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 from pydantic.fields import PrivateAttr
 
-from keys import PROJECT_KEY
+try:
+    from keys import PROJECT_KEY
+except:
+    # When running on CI services.
+    PROJECT_KEY = "PROJECT_KEY"
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
 pwd_context = CryptContext(schemes=["bcrypt"])
