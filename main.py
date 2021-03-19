@@ -76,7 +76,7 @@ class CoffeeBag(KeyedModel):
     def __init__(self, **data):
         super().__init__(**data)
         key = data.get("key")
-        if not key is None:
+        if key is not None:
             self._key = key
 
 
@@ -89,7 +89,7 @@ class CoffeeUse(KeyedModel):
         super().__init__(**data)
         self._seconds = unix_time_millis(self.datetime)
         key = data.get("key")
-        if not key is None:
+        if key is not None:
             self._key = key
 
 
@@ -100,8 +100,7 @@ KeyedObjectType = TypeVar("KeyedObjectType", CoffeeBag, CoffeeUse)
 
 
 def convert_info_to_bag(info: Dict[str, Any]) -> CoffeeBag:
-    bag = CoffeeBag(**info)
-    return bag
+    return CoffeeBag(**info)
 
 
 def convert_bag_to_info(bag: CoffeeBag) -> Dict[str, Any]:
@@ -309,7 +308,7 @@ def get_active_bags(n_last: Optional[int] = Query(None, ge=1)) -> BagResponse:
 
     sort_coffee_bags(bags)
 
-    if not n_last is None:
+    if n_last is not None:
         bags = bags[-n_last:]
 
     return keyedlist_to_dict(bags)
@@ -328,9 +327,9 @@ def query_coffee_uses_db(
     uses: List[CoffeeUse] = []
 
     query_prep: Dict[str, Any] = {}
-    if not bag_id is None:
+    if bag_id is not None:
         query_prep["bag_id"] = bag_id
-    if not since is None:
+    if since is not None:
         query_prep["_seconds?gt"] = unix_time_millis(since)
 
     query: Optional[Dict[str, Any]] = None
@@ -443,19 +442,19 @@ def activate_bag(bag_id: str, password: str) -> BagResponse:
         raise_bag_not_found(bag_id)
 
     bag = convert_info_to_bag(bag_info)
-    if not bag.active:
-        bag_info["finish"] = None
-        bag_info["active"] = True
-        coffee_bag_db.update(
-            updates={"finish": None, "active": True},
-            key=bag_id,
-        )
-        return {bag_id: convert_info_to_bag(bag_info)}
-    else:
+    if bag.active:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f"Bag with key '{bag_id}' is already active (cannot activate).",
         )
+
+    bag_info["finish"] = None
+    bag_info["active"] = True
+    coffee_bag_db.update(
+        updates={"finish": None, "active": True},
+        key=bag_id,
+    )
+    return {bag_id: convert_info_to_bag(bag_info)}
 
 
 @app.patch("/update_bag/{bag_id}", response_model=BagResponse)
@@ -470,7 +469,7 @@ def update_bag(bag_id: str, field: str, value: Any, password: str) -> BagRespons
     if bag_info is None:
         raise_bag_not_found(bag_id)
 
-    if not field in bag_info.keys():
+    if field not in bag_info.keys():
         # Not a viable field in CoffeeBag model.
         raise_invalid_field(field)
 
@@ -488,7 +487,7 @@ def update_bag(bag_id: str, field: str, value: Any, password: str) -> BagRespons
 
 
 def _delete_coffee_bag(bag_id: str):
-    if not coffee_bag_db.get(bag_id) is None:
+    if coffee_bag_db.get(bag_id) is not None:
         coffee_bag_db.delete(bag_id)
         increment_coffee_bag(by=-1)
 
@@ -521,7 +520,7 @@ def delete_all_bags(password: str):
 
 
 def _delete_coffee_use(id: str):
-    if not coffee_use_db.get(id) is None:
+    if coffee_use_db.get(id) is not None:
         coffee_use_db.delete(id)
         increment_coffee_use(by=-1)
 
