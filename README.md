@@ -2,7 +2,7 @@
 
 A simple web API for recording my coffee consumption.
 
-[![python](https://img.shields.io/badge/Python-3.9-3776AB.svg?style=flat&logo=python&logoColor=FFDB4D)](https://www.python.org)
+[![python](https://img.shields.io/badge/Python-3.7-3776AB.svg?style=flat&logo=python&logoColor=FFFF9A)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.63.0-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com) <br>
 [![pytest](https://github.com/jhrcook/coffee-counter-api/actions/workflows/CI.yml/badge.svg)](https://github.com/jhrcook/coffee-counter-api/actions/workflows/CI.yml)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
@@ -23,5 +23,4 @@ When one of the labels is tapped, the plugin then registers a use of the bag wit
 
 ### Streamlit web app
 
-I am currently building a [Streamlit](http://streamlit.io/) web application for visualizing and analyzing the data collected through this API.
-More information will be provided when this is ready to be used.
+I have built a [Streamlit](http://streamlit.io/) web application for visualizing and analyzing the data collected through this API: [app](https://share.streamlit.io/jhrcook/coffee-counter-streamlit/app.py) | [source](https://github.com/jhrcook/coffee-counter-streamlit)
