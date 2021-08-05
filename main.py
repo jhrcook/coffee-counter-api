@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+"""FastAPI for keeping records of coffee consumption."""
 
 import os
 import uuid

@@ -1,4 +1,4 @@
-#!/usr/bun/env python3
+"""Test the coffee counting API."""
 
 from datetime import date, datetime, timedelta
 from random import choices, randint, random
