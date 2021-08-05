@@ -1,0 +1,9 @@
+deta==0.7
+fastapi==0.63.0
+passlib[bcrypt]
+coverage
+black
+isort
+mypy
+pytest==6.2.*
+pytest-cov
