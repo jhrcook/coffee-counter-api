@@ -7,3 +7,4 @@ isort
 mypy
 pytest==6.2.*
 pytest-cov
+pytest-sugar

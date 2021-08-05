@@ -52,59 +52,70 @@ def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) 
 
 
 class TestModelDataModifiers:
-    def test_convert_info_to_bag(self):
-        info: Dict[str, Any] = {}
+    @pytest.mark.parametrize(
+        "info",
+        (
+            {},
+            {"brand": None, "name": None},
+            {"brand": "BRAND"},
+            {"brand": None, "name": "NAME"},
+        ),
+    )
+    def test_convert_info_to_bag_fails(self, info: Dict[str, Any]):
         with pytest.raises(Exception):
             _ = main.convert_info_to_bag(info)
 
-        info["brand"] = None
-        info["name"] = None
-        with pytest.raises(Exception):
-            _ = main.convert_info_to_bag(info)
-
-        info["brand"] = "BRAND"
-        with pytest.raises(Exception):
-            _ = main.convert_info_to_bag(info)
-
-        info["brand"] = None
-        info["name"] = "NAME"
-        with pytest.raises(Exception):
-            _ = main.convert_info_to_bag(info)
-
-        info["brand"] = "BRAND"
-        info["name"] = "NAME"
+    @pytest.mark.parametrize(
+        "info",
+        (
+            {"brand": "BRAND", "name": "NAME"},
+            {"brand": "BRAND", "name": "NAME", "key": "KEY"},
+            {
+                "brand": "BRAND",
+                "name": "NAME",
+                "weight": 3940832.4980,
+                "start": gen_date(),
+                "finish": gen_date(),
+            },
+            {
+                "brand": "BRAND",
+                "name": "NAME",
+                "weight": 3940832.4980,
+                "start": gen_date(),
+                "finish": gen_date(),
+                "random_field": "RANDOM_VALUE",
+            },
+        ),
+    )
+    def test_convert_info_to_bag_succeeds(self, info: Dict[str, Any]):
         bag = main.convert_info_to_bag(info)
         assert isinstance(bag, CoffeeBag)
-        assert bag.brand == "BRAND"
-        assert bag.name == "NAME"
+        assert bag.brand == info["brand"]
+        assert bag.name == info["name"]
+        if "key" in info.keys():
+            bag._key == info["key"]
+        if "weight" in info.keys():
+            bag.weight == info["weight"]
+        if "start" in info.keys():
+            bag.start == info["start"]
+        if "finish" in info.keys():
+            bag.finish == info["finish"]
 
-        info["key"] = "KEY"
-        bag = main.convert_info_to_bag(info)
-        assert bag._key == info["key"]
-
-        info["weight"] = 3940832.4980
-        info["start"] = gen_date()
-        info["finish"] = gen_date()
-        bag = main.convert_info_to_bag(info)
-        assert bag._key == info["key"]
-        assert bag.weight == info["weight"]
-        assert bag.start == info["start"]
-        assert bag.finish == info["finish"]
-
-        info["random_field"] = "RANDOM_VALUE"
-        bag = main.convert_info_to_bag(info)
-        assert isinstance(bag, CoffeeBag)
-
-    def test_convert_bag_to_info(self):
-        bag = CoffeeBag(brand="BRAND", name="NAME")
+    @pytest.mark.parametrize(
+        "bag, expected_key",
+        (
+            [CoffeeBag(brand="BRAND", name="NAME"), None],
+            [CoffeeBag(brand="BRAND", name="NAME", key="FAKE-KEY"), "FAKE-KEY"],
+        ),
+    )
+    def test_convert_bag_to_info(self, bag: CoffeeBag, expected_key: Any):
         info = main.convert_bag_to_info(bag)
         assert info["brand"] == bag.brand
         assert info["name"] == bag.name
         assert isinstance(bag._key, str)
-
-        info["key"] = "FAKE-KEY"
-        info = main.convert_bag_to_info(bag)
         assert info["key"] == bag._key
+        if expected_key is not None:
+            assert info["key"] == expected_key
 
     def test_convert_info_to_bag_to_info(self):
         info1: Dict[str, Any] = {
@@ -117,29 +128,34 @@ class TestModelDataModifiers:
         for key, item in info1.items():
             assert info2[key] == item
 
-    def test_convert_info_to_use(self):
-        info: Dict[str, Any] = {}
+    @pytest.mark.parametrize(
+        "info",
+        (
+            {},
+            {"bag_id": "BAG_ID"},
+            {"bag_id": None},
+            {"bag_id": None, "datetime": gen_datetime()},
+        ),
+    )
+    def test_convert_info_to_use_fails(self, info: Dict[str, Any]):
         with pytest.raises(Exception):
             main.convert_info_to_use(info)
 
-        info["bag_id"] = "BAG_ID"
-        with pytest.raises(Exception):
-            main.convert_info_to_use(info)
-
-        info["bag_id"] = None
-        info["datetime"] = gen_datetime()
-        with pytest.raises(Exception):
-            main.convert_info_to_use(info)
-
-        info["bag_id"] = "BAG_ID"
+    @pytest.mark.parametrize(
+        "info",
+        (
+            {"bag_id": "BAG_ID", "datetime": gen_datetime()},
+            {"bag_id": "BAG_ID", "datetime": gen_datetime(), "key": mock_password()},
+        ),
+    )
+    def test_convert_info_to_use_succeeds(self, info: Dict[str, Any]):
         use = main.convert_info_to_use(info)
+        assert isinstance(use, CoffeeUse)
         assert use.bag_id == info["bag_id"]
         assert use.datetime == info["datetime"]
         assert isinstance(use._key, str)
-
-        info["key"] = mock_password()
-        use = main.convert_info_to_use(info)
-        assert use._key == info["key"]
+        if "key" in info.keys():
+            assert use._key == info["key"]
 
     def test_convert_use_to_info(self):
         use = CoffeeUse(bag_id="BAG_ID", datetime=datetime.now())
@@ -206,12 +222,17 @@ class TestHttpExceptions:
         with pytest.raises(HTTPException) as err:
             main.raise_invalid_field("SOME FIELD")
         assert err.value.status_code == 404
-        assert "SOME FIELD" in err.value.detail
+        assert "SOME FIELD" in str(err.value.detail)
 
 
-#### ---- Test Getters ---- ####
+#### ---- Test Getters on real data ---- ####
+
+
 @pytest.mark.getter
 class TestGetters:
+
+    N_TRIES = 5
+
     @pytest.fixture
     def bag_id(self) -> str:
         return "66383fb3-832f-4f1c-987a-f7e410ab5f71"
@@ -308,7 +329,7 @@ class TestGetters:
         assert isinstance(response.json(), int)
 
     def test_get_number_of_uses_since(self):
-        for _ in range(N_TRIES):
+        for _ in range(self.N_TRIES):
             response = client.get(f"/number_of_uses/?since={gen_datetime_fmt()}")
             assert response.status_code == 200
             assert isinstance(response.json(), int)
@@ -320,7 +341,7 @@ class TestGetters:
         assert response.json() > 0
 
     def test_get_number_of_uses_since_bag_id(self, bag_id: str):
-        for _ in range(N_TRIES):
+        for _ in range(self.N_TRIES):
             response = client.get(
                 f"/number_of_uses/?since={gen_datetime_fmt()}&bag_id={bag_id}"
             )
@@ -329,134 +350,3 @@ class TestGetters:
 
 
 #### ---- Test Passwords ---- ####
-
-N_TRIES = 5
-
-
-@pytest.mark.setter
-class TestSetterPasswords:
-    def test_add_new_bag_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.put(
-                f"/new_bag/?password={mock_password()}", json=jsonable_encoder(mock_bag)
-            )
-            assert response.status_code == 401
-        response = client.put("/new_bag/?password=", json=jsonable_encoder(mock_bag))
-        assert response.status_code == 401
-
-    def test_add_new_use_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.put(
-                f"/new_use/{mock_bag._key}?password={mock_password()}",
-                json=jsonable_encoder(mock_bag),
-            )
-            assert response.status_code == 401
-        response = client.put(
-            f"/new_use/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-        )
-        assert response.status_code == 401
-
-    def test_deactivate_bag_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.patch(
-                f"/deactivate/{mock_bag._key}?password={mock_password()}",
-                json=jsonable_encoder(mock_bag),
-            )
-            assert response.status_code == 401
-        response = client.patch(
-            f"/deactivate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-        )
-        assert response.status_code == 401
-
-    def test_activate_bag_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.patch(
-                f"/activate/{mock_bag._key}?password={mock_password()}",
-                json=jsonable_encoder(mock_bag),
-            )
-            assert response.status_code == 401
-        response = client.patch(
-            f"/activate/{mock_bag._key}?password=", json=jsonable_encoder(mock_bag)
-        )
-        assert response.status_code == 401
-
-    def test_update_bag_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.patch(
-                f"/update_bag/{mock_bag._key}?field=field&value=value&password={mock_password()}",
-                json=jsonable_encoder(mock_bag),
-            )
-            assert response.status_code == 401
-        response = client.patch(
-            f"/update_bag/{mock_bag._key}?field=field&value=value&password=",
-            json=jsonable_encoder(mock_bag),
-        )
-        assert response.status_code == 401
-
-    def test_delete_bag_password(self, mock_bag: CoffeeBag):
-        for _ in range(N_TRIES):
-            response = client.delete(
-                f"/delete_bag/{mock_bag._key}?password={mock_password()}",
-                json=jsonable_encoder(mock_bag),
-            )
-            assert response.status_code == 401
-        response = client.delete(
-            f"/delete_bag/{mock_bag._key}?password=",
-            json=jsonable_encoder(mock_bag),
-        )
-        assert response.status_code == 401
-
-    def test_delete_bags_password(self):
-        bag_ids = [str(uuid1()) for _ in range(4)]
-        for _ in range(N_TRIES):
-            response = client.delete(
-                f"/delete_bags/?password={mock_password()}",
-                json=jsonable_encoder(bag_ids),
-            )
-            assert response.status_code == 401
-        response = client.delete(
-            f"/delete_bags/?password=",
-            json=jsonable_encoder(bag_ids),
-        )
-        assert response.status_code == 401
-
-    # NOTE: Careful not to use random passwords for this test
-    def test_delete_all_bags_password(self):
-        response = client.delete("/delete_all_bags/?password=")
-        assert response.status_code == 401
-        response = client.delete("/delete_all_bags/?password=not-the-password")
-        assert response.status_code == 401
-
-    def test_delete_use_password(self, mock_use: CoffeeUse):
-        for _ in range(N_TRIES):
-            response = client.delete(
-                f"/delete_use/{mock_use._key}?password={mock_password()}",
-                json=jsonable_encoder(mock_use),
-            )
-            assert response.status_code == 401
-        response = client.delete(
-            f"/delete_use/{mock_use._key}?password=",
-            json=jsonable_encoder(mock_use),
-        )
-        assert response.status_code == 401
-
-    def test_delete_uses_password(self):
-        use_ids = [str(uuid1()) for _ in range(4)]
-        for _ in range(N_TRIES):
-            response = client.delete(
-                f"/delete_uses/?password={mock_password()}",
-                json=jsonable_encoder(use_ids),
-            )
-            assert response.status_code == 401
-        response = client.delete(
-            f"/delete_uses/?password=",
-            json=jsonable_encoder(use_ids),
-        )
-        assert response.status_code == 401
-
-    # NOTE: Careful not to use random passwords for this test
-    def test_delete_all_uses_password(self):
-        response = client.delete("/delete_all_uses/?password=")
-        assert response.status_code == 401
-        response = client.delete("/delete_all_uses/?password=not-the-password")
-        assert response.status_code == 401

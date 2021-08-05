@@ -34,10 +34,6 @@ EPOCH = datetime.utcfromtimestamp(0)
 
 deta = Deta(PROJECT_KEY)  # no key needed with using Deta Micro
 
-# coffee_bag_db = deta.Base("coffee_bag_db-TEST")
-# coffee_use_db = deta.Base("coffee_use_db-TEST")
-# meta_db = deta.Base("meta_db-TEST")
-
 coffee_bag_db = deta.Base("coffee_bag_db")
 coffee_use_db = deta.Base("coffee_use_db")
 meta_db = deta.Base("meta_db")
