@@ -3,18 +3,26 @@
 from datetime import date, datetime, timedelta
 from random import choices, randint, random
 from string import printable
-from typing import Any, Dict
-from uuid import uuid1
+from typing import Any, Dict, List
 
+import factory
 import pytest
+from faker import Faker
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 import main
 from main import CoffeeBag, CoffeeUse, app, today_at_midnight
 
+main.PROJECT_KEY = ""
+
 client = TestClient(app)
+
+fake = Faker()
+fake.seed_instance(123)
 
 
 @pytest.fixture(scope="module")
@@ -175,31 +183,81 @@ class TestModelDataModifiers:
             assert info2[key] == value
 
 
-#### ---- Data base interfacing functions ---- ####
-
-# get_all_detabase_info
-# get_all_coffee_bag_info
-# coffee_bag_list
-# coffee_bag_dict
-# get_all_coffee_use_info
-# coffee_use_dict
-# sort_coffee_bags
+#### ---- Database interfacing functions ---- ####
 
 
-#### ---- Meta Database ---- ####
+class CoffeeBagFactory(factory.Factory):
+    class Meta:
+        model = CoffeeBag
+
+    brand = fake.name()
+    name = fake.name()
+    weight = fake.pyfloat()
+    start = fake.date()
+    finish = fake.date()
+    active = fake.boolean()
 
 
-@pytest.mark.getter
-class TestMetaDatabase:
-    def test_num_coffee_bags(self):
-        n_bags = main.num_coffee_bags()
-        assert isinstance(n_bags, int)
-        assert n_bags > 0
+class CoffeeUseFactory(factory.Factory):
+    class Meta:
+        model = CoffeeUse
 
-    def test_num_coffee_uses(self):
-        n_uses = main.num_coffee_uses()
-        assert isinstance(n_uses, int)
-        assert n_uses > 0
+    bag_id = fake.sha1()
+    datetime = fake.date_time()
+
+
+def mock_coffee_bag_info(*args, **kwargs) -> List[Dict[str, Any]]:
+    return [CoffeeBagFactory().dict() for _ in range(5)]
+
+
+def mock_coffee_use_info(*args, **kwargs) -> List[Dict[str, Any]]:
+    return [CoffeeUseFactory().dict() for _ in range(5)]
+
+
+def test_coffee_bag_list(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(main, "get_all_coffee_bag_info", mock_coffee_bag_info)
+    bags = main.coffee_bag_list()
+    for bag in bags:
+        assert isinstance(bag, CoffeeBag)
+
+
+def test_coffee_bag_dict(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(main, "get_all_coffee_bag_info", mock_coffee_bag_info)
+    for key, bag in main.coffee_bag_dict().items():
+        assert isinstance(bag, CoffeeBag)
+        assert key == bag._key
+
+
+def test_coffee_use_dict(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(main, "get_all_coffee_use_info", mock_coffee_use_info)
+    for key, use in main.coffee_use_dict().items():
+        assert isinstance(use, CoffeeUse)
+        assert key == use._key
+
+
+@st.composite
+def coffee_bag_list(draw):
+    n = draw(st.integers(0, 20))
+    bags = [CoffeeBagFactory() for _ in range(n)]
+    return bags
+
+
+@given(coffee_bag_list())
+def test_sort_coffee_bags(bags: List[CoffeeBag]):
+    main.sort_coffee_bags(bags)
+    if len(bags) < 2:
+        assert True
+        return
+
+    for i in range(len(bags) - 1):
+        a = bags[i - 1]
+        b = bags[i]
+        if b.start is None:
+            assert True
+        elif a.start is None:
+            assert b.start is None
+        else:
+            assert a.start <= b.start
 
 
 #### ---- HTTP Exceptions ---- ####
@@ -223,130 +281,3 @@ class TestHttpExceptions:
             main.raise_invalid_field("SOME FIELD")
         assert err.value.status_code == 404
         assert "SOME FIELD" in str(err.value.detail)
-
-
-#### ---- Test Getters on real data ---- ####
-
-
-@pytest.mark.getter
-class TestGetters:
-
-    N_TRIES = 5
-
-    @pytest.fixture
-    def bag_id(self) -> str:
-        return "66383fb3-832f-4f1c-987a-f7e410ab5f71"
-
-    def test_read_root(self):
-        response = client.get("/")
-        assert response.status_code == 200
-
-    def test_get_bags(self):
-        response = client.get("/bags/")
-        assert response.status_code == 200
-        bag_info = response.json()
-        for key, info in bag_info.items():
-            assert isinstance(key, str)
-            bag = CoffeeBag(_key=key, **info)
-            assert isinstance(bag, CoffeeBag)
-
-    def test_get_number_of_bags(self):
-        response = client.get("/number_of_bags/")
-        assert response.status_code == 200
-        assert isinstance(response.json(), int)
-        assert response.json() > 0
-
-    def test_get_bag_info(self, bag_id: str):
-        response = client.get(f"/bag/{bag_id}")
-        assert response.status_code == 200
-
-    def test_get_bag_info_fake_bag(self, mock_bag: CoffeeBag):
-        response = client.get(f"/bag/{mock_bag._key}")
-        assert response.status_code == 404
-
-    def test_get_active_bags(self):
-        response = client.get("/active_bags/")
-        assert response.status_code == 200
-        for key, info in response.json().items():
-            assert isinstance(CoffeeBag(_key=key, **info), CoffeeBag)
-
-    def test_get_active_bags_n_last(self):
-        response = client.get("/active_bags/?n_last=1")
-        assert response.status_code == 200
-        assert len(response.json().keys()) <= 1
-
-        response = client.get("/active_bags/?n_last=0")
-        assert response.status_code != 200
-
-    def test_get_uses_defaults(self):
-        response = client.get("/uses/")
-        assert response.status_code == 200
-        assert len(response.json().keys()) > 0
-        for key, info in response.json().items():
-            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-    def test_get_uses_n_last(self):
-        response = client.get("/uses/?n_last=5")
-        assert response.status_code == 200
-        assert len(response.json().keys()) == 5
-        for key, info in response.json().items():
-            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-        response = client.get("/uses/?n_last=1")
-        assert response.status_code == 200
-        assert len(response.json().keys()) == 1
-        for key, info in response.json().items():
-            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-        response = client.get("/uses/?n_last=0")
-        assert response.status_code != 200
-
-    def test_get_uses_since(self):
-        _date = today_at_midnight().strftime("%Y-%m-%dT%H:%M:%S")
-        dates = [_date, _date + ".00"]  # try multiple date formats
-        for date in dates:
-            response = client.get(f"/uses/?since={date}")
-            assert response.status_code == 200
-            assert len(response.json().keys()) >= 0
-            for key, info in response.json().items():
-                assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-    def test_get_uses_bag_id(self, bag_id: str):
-        response = client.get(f"/uses/?bag_id={bag_id}")
-        assert response.status_code == 200
-        assert len(response.json().keys()) >= 0
-        for key, info in response.json().items():
-            assert isinstance(CoffeeUse(_key=key, **info), CoffeeUse)
-
-    def test_get_uses_fake_bag_id(self):
-        response = client.get(f"/uses/?bag_id={mock_password()}")
-        assert response.status_code == 200
-        assert len(response.json().keys()) == 0
-
-    def test_get_number_of_uses(self):
-        response = client.get("/number_of_uses/")
-        assert response.status_code == 200
-        assert isinstance(response.json(), int)
-
-    def test_get_number_of_uses_since(self):
-        for _ in range(self.N_TRIES):
-            response = client.get(f"/number_of_uses/?since={gen_datetime_fmt()}")
-            assert response.status_code == 200
-            assert isinstance(response.json(), int)
-
-    def test_get_number_of_uses_bag_id(self, bag_id: str):
-        response = client.get(f"/number_of_uses/?bag_id={bag_id}")
-        assert response.status_code == 200
-        assert isinstance(response.json(), int)
-        assert response.json() > 0
-
-    def test_get_number_of_uses_since_bag_id(self, bag_id: str):
-        for _ in range(self.N_TRIES):
-            response = client.get(
-                f"/number_of_uses/?since={gen_datetime_fmt()}&bag_id={bag_id}"
-            )
-            assert response.status_code == 200
-            assert isinstance(response.json(), int)
-
-
-#### ---- Test Passwords ---- ####

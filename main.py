@@ -120,7 +120,7 @@ def keyedlist_to_dict(x: List[KeyedObjectType]) -> Dict[str, KeyedObjectType]:
     return {y._key: y for y in x}
 
 
-def get_all_detabase_info(db: Base, n_items: int):
+def get_all_detabase_info(db: Base, n_items: int) -> List[Dict[str, Any]]:
     n_buffer = 100
     n_pages = ceil(n_items / n_buffer) + 1  # add one just in case
 
@@ -154,7 +154,7 @@ def coffee_use_dict() -> Dict[str, CoffeeUse]:
     return keyedlist_to_dict(uses)
 
 
-def sort_coffee_bags(bags: List[CoffeeBag]):
+def sort_coffee_bags(bags: List[CoffeeBag]) -> None:
     def f(b: CoffeeBag) -> date:
         if b.start is None:
             return date.today()

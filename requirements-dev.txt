@@ -5,6 +5,9 @@ coverage
 black
 isort
 mypy
-pytest==6.2.*
+pytest>=6.2
 pytest-cov
 pytest-sugar
+hypothesis>=6.14
+Faker>=8.11
+factory-boy>=3.2
