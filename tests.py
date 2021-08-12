@@ -11,18 +11,52 @@ from faker import Faker
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 import main
-from main import CoffeeBag, CoffeeUse, app, today_at_midnight
+from main import CoffeeBag, CoffeeUse, app
 
 main.PROJECT_KEY = ""
 
 client = TestClient(app)
 
+
+#### ---- Fake data ---- ####
+
 fake = Faker()
 fake.seed_instance(123)
+
+
+class CoffeeBagFactory(factory.Factory):
+    class Meta:
+        model = CoffeeBag
+
+    brand = fake.name()
+    name = fake.name()
+    weight = fake.pyfloat()
+    start = fake.date()
+    finish = fake.date()
+    active = fake.boolean()
+
+
+class CoffeeUseFactory(factory.Factory):
+    class Meta:
+        model = CoffeeUse
+
+    bag_id = fake.sha1()
+    datetime = fake.date_time()
+
+
+def mock_coffee_bag_info(*args, **kwargs) -> List[Dict[str, Any]]:
+    return [CoffeeBagFactory().dict() for _ in range(5)]
+
+
+def mock_coffee_use_info(*args, **kwargs) -> List[Dict[str, Any]]:
+    return [CoffeeUseFactory().dict() for _ in range(5)]
+
+
+#### ---- Pytest Fixtures ---- ####
 
 
 @pytest.fixture(scope="module")
@@ -35,25 +69,29 @@ def mock_use() -> CoffeeUse:
     return CoffeeUse(bag_id="BAG-ID", datetime=datetime.now())
 
 
-def mock_password() -> str:
-    k = randint(10, 50)
-    return "".join(choices(list(printable), k=k))
+@st.composite
+def coffee_bag_list(draw):
+    n = draw(st.integers(0, 20))
+    bags = [CoffeeBagFactory() for _ in range(n)]
+    for bag in bags:
+        if random() < 0.1:
+            bag.start = None
+    return bags
 
 
-def gen_datetime(min_year: int = 1900, max_year: int = datetime.now().year) -> datetime:
-    # generate a datetime in format yyyy-mm-dd hh:mm:ss.000000
-    start = datetime(min_year, 1, 1, 00, 00, 00)
-    years = max_year - min_year + 1
-    end = start + timedelta(days=365 * years)
-    return start + (end - start) * random()
+#### ---- Helper functions ---- ####
 
 
-def gen_date(min_year: int = 1900, max_year: int = datetime.now().year) -> date:
-    return gen_datetime(min_year, max_year).date()
-
-
-def gen_datetime_fmt(min_year: int = 1900, max_year: int = datetime.now().year) -> str:
-    return gen_datetime(min_year, max_year).strftime("%Y-%m-%dT%H:%M:%S")
+def test_today_at_midnight():
+    midnight = main.today_at_midnight()
+    today = date.today()
+    assert midnight.year == today.year
+    assert midnight.month == today.month
+    assert midnight.day == today.day
+    assert midnight.hour == 0
+    assert midnight.minute == 0
+    assert midnight.second == 0
+    assert midnight.microsecond == 0
 
 
 #### ---- Data modifiers ---- ####
@@ -82,15 +120,15 @@ class TestModelDataModifiers:
                 "brand": "BRAND",
                 "name": "NAME",
                 "weight": 3940832.4980,
-                "start": gen_date(),
-                "finish": gen_date(),
+                "start": fake.date_object(),
+                "finish": fake.date_object(),
             },
             {
                 "brand": "BRAND",
                 "name": "NAME",
                 "weight": 3940832.4980,
-                "start": gen_date(),
-                "finish": gen_date(),
+                "start": fake.date_object(),
+                "finish": fake.date_object(),
                 "random_field": "RANDOM_VALUE",
             },
         ),
@@ -127,9 +165,9 @@ class TestModelDataModifiers:
 
     def test_convert_info_to_bag_to_info(self):
         info1: Dict[str, Any] = {
-            "brand": mock_password(),
-            "name": mock_password(),
-            "key": mock_password(),
+            "brand": fake.company(),
+            "name": fake.bs(),
+            "key": fake.credit_card_number(),
         }
         bag = main.convert_info_to_bag(info1)
         info2 = main.convert_bag_to_info(bag)
@@ -142,7 +180,7 @@ class TestModelDataModifiers:
             {},
             {"bag_id": "BAG_ID"},
             {"bag_id": None},
-            {"bag_id": None, "datetime": gen_datetime()},
+            {"bag_id": None, "datetime": fake.date_time()},
         ),
     )
     def test_convert_info_to_use_fails(self, info: Dict[str, Any]):
@@ -152,8 +190,8 @@ class TestModelDataModifiers:
     @pytest.mark.parametrize(
         "info",
         (
-            {"bag_id": "BAG_ID", "datetime": gen_datetime()},
-            {"bag_id": "BAG_ID", "datetime": gen_datetime(), "key": mock_password()},
+            {"bag_id": "BAG_ID", "datetime": fake.date_time()},
+            {"bag_id": "BAG_ID", "datetime": fake.date_time(), "key": main.make_key()},
         ),
     )
     def test_convert_info_to_use_succeeds(self, info: Dict[str, Any]):
@@ -174,8 +212,8 @@ class TestModelDataModifiers:
 
     def test_convert_info_to_use_info(self):
         info1: Dict[str, Any] = {
-            "bag_id": mock_password(),
-            "datetime": jsonable_encoder(gen_datetime()),
+            "bag_id": main.make_key(),
+            "datetime": jsonable_encoder(fake.date_time()),
         }
         use = main.convert_info_to_use(info1)
         info2 = main.convert_use_to_info(use)
@@ -184,34 +222,6 @@ class TestModelDataModifiers:
 
 
 #### ---- Database interfacing functions ---- ####
-
-
-class CoffeeBagFactory(factory.Factory):
-    class Meta:
-        model = CoffeeBag
-
-    brand = fake.name()
-    name = fake.name()
-    weight = fake.pyfloat()
-    start = fake.date()
-    finish = fake.date()
-    active = fake.boolean()
-
-
-class CoffeeUseFactory(factory.Factory):
-    class Meta:
-        model = CoffeeUse
-
-    bag_id = fake.sha1()
-    datetime = fake.date_time()
-
-
-def mock_coffee_bag_info(*args, **kwargs) -> List[Dict[str, Any]]:
-    return [CoffeeBagFactory().dict() for _ in range(5)]
-
-
-def mock_coffee_use_info(*args, **kwargs) -> List[Dict[str, Any]]:
-    return [CoffeeUseFactory().dict() for _ in range(5)]
 
 
 def test_coffee_bag_list(monkeypatch: pytest.MonkeyPatch):
@@ -233,13 +243,6 @@ def test_coffee_use_dict(monkeypatch: pytest.MonkeyPatch):
     for key, use in main.coffee_use_dict().items():
         assert isinstance(use, CoffeeUse)
         assert key == use._key
-
-
-@st.composite
-def coffee_bag_list(draw):
-    n = draw(st.integers(0, 20))
-    bags = [CoffeeBagFactory() for _ in range(n)]
-    return bags
 
 
 @given(coffee_bag_list())
@@ -281,3 +284,29 @@ class TestHttpExceptions:
             main.raise_invalid_field("SOME FIELD")
         assert err.value.status_code == 404
         assert "SOME FIELD" in str(err.value.detail)
+
+
+#### ---- Getters ---- ####
+
+
+def test_get_root():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"message": "Coffee Counter API"}
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    (
+        "/",
+        "/docs/",
+        "/bags/",
+        "/number_of_bags/",
+        "/active_bags/",
+        "/uses/",
+        "/number_of_uses/",
+    ),
+)
+def test_real_getter_endpoints(endpoint: str):
+    response = client.get(endpoint)
+    assert response.status_code == 200
