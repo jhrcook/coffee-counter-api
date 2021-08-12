@@ -22,3 +22,16 @@ repos:
     rev: v0.812
     hooks:
     -   id: mypy
+-   repo: https://github.com/PyCQA/flake8
+    rev: 3.9.2
+    hooks:
+    -   id: flake8
+        types: [python]
+# -   repo: https://github.com/PyCQA/pydocstyle
+#     rev: 6.1.1
+#     hooks:
+#     -   id: pydocstyle
+#         types: [python]
+#         exclude: ".snakemake."
+#         files: "src/.*"
+#         args: ["--convention", "google", "--add-ignore", "D301"]

@@ -13,14 +13,15 @@ from fastapi import FastAPI, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from pydantic.errors import NoneIsNotAllowedError
 from pydantic.fields import PrivateAttr
 
 try:
     from keys import PROJECT_KEY
-except:
+except ModuleNotFoundError:
     # When running on CI services.
     PROJECT_KEY = os.getenv("DETA_PROJECT_KEY", default="PROJECT_KEY")
+except Exception:
+    raise BaseException("Deta project key not found.")
 
 
 HASHED_PASSWORD = "$2b$12$VOGTaA8tXdYoAU4Js6NBXO9uL..rXITV.WMiF/g8MEmCtdoMjLkOK"
@@ -183,10 +184,7 @@ def initialize_meta_db(bag_count: int = 0, use_count: int = 0):
 
 
 def increment_meta_count(field: MetaDataField, by: int):
-    try:
-        meta_db.update({field: meta_db.util.increment(by)}, key=META_DB_KEY)
-    except:
-        initialize_meta_db(**{field.value: by})
+    meta_db.update({field: meta_db.util.increment(by)}, key=META_DB_KEY)
     return None
 
 
@@ -472,7 +470,8 @@ def update_bag(bag_id: str, field: str, value: Any, password: str) -> BagRespons
     bag_info[field] = value
     try:
         bag = convert_info_to_bag(bag_info)
-    except:
+    except Exception as err:
+        print(err)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail="Unable to convert data into CoffeeBag object.",

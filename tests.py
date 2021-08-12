@@ -1,8 +1,7 @@
 """Test the coffee counting API."""
 
-from datetime import date, datetime, timedelta
-from random import choices, randint, random
-from string import printable
+from datetime import date, datetime
+from random import random
 from typing import Any, Dict, List
 
 import factory
