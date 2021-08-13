@@ -3,7 +3,7 @@
 import math
 from datetime import date, datetime
 from random import random
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import factory
 import pytest
@@ -54,6 +54,19 @@ def mock_coffee_bag_info(*args, **kwargs) -> List[Dict[str, Any]]:
 
 def mock_coffee_use_info(*args, **kwargs) -> List[Dict[str, Any]]:
     return [CoffeeUseFactory().dict() for _ in range(5)]
+
+
+#### ---- Database monkeypatches ---- ####
+
+
+def mock_coffee_bag_db_get(*args, **kwargs) -> Optional[Dict[str, Any]]:
+    coffee_bag = CoffeeBagFactory()
+    assert isinstance(coffee_bag, CoffeeBag)
+    return coffee_bag.dict()
+
+
+def mock_coffee_bag_db_get_none(*args, **kwargs) -> Optional[Dict[str, Any]]:
+    return None
 
 
 #### ---- Pytest Fixtures / Hypothesis strategies ---- ####
@@ -269,13 +282,11 @@ fake_passwords: List[Any] = ["", 1, 100, "a", None, -1, 0.33, math.pi, math.e, s
 fake_passwords += [fake.password() for _ in range(20)]
 
 
-@pytest.mark.dev
 @pytest.mark.parametrize("password", fake_passwords)
 def test_compare_password(password: Any):
     assert not main.compare_password(password)  # type: ignore
 
 
-@pytest.mark.dev
 @pytest.mark.parametrize("password", fake_passwords)
 def test_verify_password(password: Any):
     with pytest.raises(HTTPException):
@@ -329,3 +340,25 @@ def test_get_root():
 def test_real_getter_endpoints(endpoint: str):
     response = client.get(endpoint)
     assert response.status_code == 200
+
+
+def test_get_bag_info(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(main.coffee_bag_db, "get", mock_coffee_bag_db_get)
+    response = client.get("/bag/SOME-BAG-ID")
+    assert response.status_code == 200
+    bag_info = response.json()
+    assert bag_info is not None
+    assert len(bag_info.keys()) == 1
+    coffee_bag_dict = list(bag_info.values())[0]
+    assert isinstance(CoffeeBag(**coffee_bag_dict), CoffeeBag)
+    assert isinstance(main.convert_info_to_bag(coffee_bag_dict), CoffeeBag)
+
+
+def test_get_bag_info_errors(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(main.coffee_bag_db, "get", mock_coffee_bag_db_get_none)
+    response = client.get("/bag/SOME-BAG-ID")
+    assert response.status_code == 404
+    msg = response.json()
+    assert "SOME-BAG-ID" in msg["detail"]
+    assert "not found" in msg["detail"]
+    assert "bag" in msg["detail"].lower()
