@@ -1,5 +1,6 @@
 """Test the coffee counting API."""
 
+import math
 from datetime import date, datetime
 from random import random
 from typing import Any, Dict, List
@@ -55,7 +56,7 @@ def mock_coffee_use_info(*args, **kwargs) -> List[Dict[str, Any]]:
     return [CoffeeUseFactory().dict() for _ in range(5)]
 
 
-#### ---- Pytest Fixtures ---- ####
+#### ---- Pytest Fixtures / Hypothesis strategies ---- ####
 
 
 @pytest.fixture(scope="module")
@@ -260,6 +261,25 @@ def test_sort_coffee_bags(bags: List[CoffeeBag]):
             assert b.start is None
         else:
             assert a.start <= b.start
+
+
+#### ---- Base security functions ---- ####
+
+fake_passwords: List[Any] = ["", 1, 100, "a", None, -1, 0.33, math.pi, math.e, sum, any]
+fake_passwords += [fake.password() for _ in range(20)]
+
+
+@pytest.mark.dev
+@pytest.mark.parametrize("password", fake_passwords)
+def test_compare_password(password: Any):
+    assert not main.compare_password(password)  # type: ignore
+
+
+@pytest.mark.dev
+@pytest.mark.parametrize("password", fake_passwords)
+def test_verify_password(password: Any):
+    with pytest.raises(HTTPException):
+        main.verify_password(password)  # type: ignore
 
 
 #### ---- HTTP Exceptions ---- ####

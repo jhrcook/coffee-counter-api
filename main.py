@@ -222,6 +222,8 @@ def num_coffee_uses() -> int:
 
 
 def compare_password(password: str) -> bool:
+    if not isinstance(password, str):
+        return False
     return pwd_context.verify(password, HASHED_PASSWORD)
 
 
